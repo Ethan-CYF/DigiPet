@@ -47,6 +47,8 @@ export function validateSheet(
   const c = object(value);
   keys(c, ["version", "columns", "rows", "fps", "states"]);
   if (
+    !integer(width, 1, MAX_SIDE) ||
+    !integer(height, 1, MAX_SIDE) ||
     c.version !== 1 ||
     !integer(c.columns, 1, 32) ||
     !integer(c.rows, 1, 32) ||
@@ -69,14 +71,14 @@ export function validateSheet(
     const frames = states[state];
     if (
       !Array.isArray(frames) ||
-      !frames.length ||
+      (state === "idle" && !frames.length) ||
       frames.length > 256 ||
       !frames.every((f) =>
         integer(f, 0, (c.columns as number) * (c.rows as number) - 1),
       )
     )
       throw Error("Invalid frames / 無效影格");
-    result[state] = [...frames];
+    if (frames.length) result[state] = [...frames];
   }
   return {
     version: 1,
@@ -121,7 +123,30 @@ export function inspectPng(bytes: Uint8Array): {
 export function decodePng(png: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const img = new Image();
-    img.onload = () => resolve(img);
+    img.onload = async () => {
+      try {
+        if (typeof img.decode === "function") await img.decode();
+        // A nominally loaded but empty/corrupted bitmap must not hide the pet.
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw Error("Canvas unavailable");
+        ctx.drawImage(img, 0, 0);
+        const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        let visible = false;
+        for (let i = 3; i < data.length; i += 4)
+          if (data[i] > 8) {
+            visible = true;
+            break;
+          }
+        if (!visible)
+          throw Error("PNG has no visible pixels / PNG 沒有可見像素");
+        resolve(img);
+      } catch (e) {
+        reject(e);
+      }
+    };
     img.onerror = () => reject(Error("PNG decode failed / PNG 解碼失敗"));
     img.src = png;
   });
@@ -175,7 +200,10 @@ export function cropPng(
       break;
     }
   if (!visible) throw Error("Crop has no visible pixels / 裁切內沒有可見像素");
-  return canvas.toDataURL("image/png");
+  const png = canvas.toDataURL("image/png");
+  if (png.length > 22 + 4 * Math.ceil(MAX_BYTES / 3))
+    throw Error("Normalized PNG exceeds 2 MiB / 轉存 PNG 超過 2 MiB");
+  return png;
 }
 export function validateAppearance(value: unknown): Appearance {
   const a = object(value);
@@ -229,6 +257,7 @@ export function loadLibrary(): Library {
 export function saveLibrary(library: Library) {
   if (library.appearances.length > 8)
     throw Error("Maximum 8 appearances / 最多 8 個外觀");
+  library.appearances.forEach(validateAppearance);
   const json = JSON.stringify(library);
   if (json.length > 4_500_000)
     throw Error("Local library full / 本機外觀庫已滿");

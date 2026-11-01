@@ -30,29 +30,30 @@ describe("data-only packs", () => {
     expect(inspectPng(bytes)).toEqual({ width: 64, height: 32 });
     expect(validateSheet(config(), 64, 32)).toEqual(config());
     expect(validateAppearance(appearance())).toEqual(appearance());
+    expect(
+      validateSheet({ ...config(), states: { idle: [0], sad: [] } }, 64, 32)
+        .states,
+    ).toEqual({ idle: [0] });
   });
-  it.each(
-    [
-      { script: "alert(1)" },
-      { image: "../../etc/passwd" },
-      { url: "https://example.com/pet.png" },
-      { onLoad: "exec()" },
-      { columns: 0 },
-      { columns: 3 },
-      { rows: 99 },
-      { fps: 0 },
-      { fps: Infinity },
-      { fps: 31 },
-      { version: 2 },
-      { states: { idle: [] } },
-      { states: { idle: [2] } },
-      { states: { idle: [-1] } },
-      { states: { idle: [0.5] } },
-      { states: { walk: [0] } },
-      { states: { idle: [0], error: [1] } },
-      { states: { idle: [0], __proto__: null } },
-    ].slice(0, -1),
-  )("rejects hostile or malformed config %j", (patch) => {
+  it.each([
+    { script: "alert(1)" },
+    { image: "../../etc/passwd" },
+    { url: "https://example.com/pet.png" },
+    { onLoad: "exec()" },
+    { columns: 0 },
+    { columns: 3 },
+    { rows: 99 },
+    { fps: 0 },
+    { fps: Infinity },
+    { fps: 31 },
+    { version: 2 },
+    { states: { idle: [] } },
+    { states: { idle: [2] } },
+    { states: { idle: [-1] } },
+    { states: { idle: [0.5] } },
+    { states: { walk: [0] } },
+    { states: { idle: [0], error: [1] } },
+  ])("rejects hostile or malformed config %j", (patch) => {
     expect(() => validateSheet({ ...config(), ...patch }, 64, 32)).toThrow();
   });
   it("rejects prototype keys and nonobjects", () => {
@@ -80,6 +81,12 @@ describe("data-only packs", () => {
       new Uint8Array([...bytes, 1]),
     ])
       expect(() => inspectPng(bad)).toThrow();
+    const apng = bytes.slice();
+    const idat = apng.findIndex(
+      (_, i) => String.fromCharCode(...apng.slice(i, i + 4)) === "IDAT",
+    );
+    apng.set([97, 99, 84, 76], idat);
+    expect(() => inspectPng(apng)).toThrow();
     const huge = bytes.slice();
     new DataView(huge.buffer).setUint32(16, 999999);
     expect(() => inspectPng(huge)).toThrow();

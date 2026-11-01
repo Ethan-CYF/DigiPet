@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   cropPng,
   readPng,
@@ -37,16 +37,18 @@ export default function AppearanceManager({
   const [config, setConfig] = useState(example);
   const [error, setError] = useState("");
   const request = useRef(0);
+  const configRequest = useRef(0);
   useEffect(
     () => () => {
       request.current++;
+      configRequest.current++;
     },
     [],
   );
-  let candidate: Appearance | undefined;
-  let validationError = "";
-  try {
-    if (image) {
+  const preview = useMemo(() => {
+    try {
+      if (!image) return {};
+      if (config.length > 32768) throw Error("JSON ≤ 32 KiB");
       const sheet =
         mode === "sheet"
           ? validateSheet(
@@ -55,27 +57,36 @@ export default function AppearanceManager({
               image.naturalHeight,
             )
           : undefined;
-      candidate = {
-        id: "preview",
-        name: name.trim() || "My pet",
-        png: cropPng(
-          image,
-          sheet
-            ? {
-                x: 0,
-                y: 0,
-                width: image.naturalWidth,
-                height: image.naturalHeight,
-              }
-            : crop,
-          !!sheet,
-        ),
-        ...(sheet ? { sheet } : {}),
-      };
+      const png = cropPng(
+        image,
+        sheet
+          ? {
+              x: 0,
+              y: 0,
+              width: image.naturalWidth,
+              height: image.naturalHeight,
+            }
+          : crop,
+        !!sheet,
+      );
+      return { png, sheet };
+    } catch (e) {
+      return { error: String(e) };
     }
-  } catch (e) {
-    validationError = String(e);
-  }
+  }, [image, mode, config, crop]);
+  const candidate: Appearance | undefined = useMemo(
+    () =>
+      preview.png
+        ? {
+            id: "preview",
+            name: name.trim() || "My pet",
+            png: preview.png,
+            ...(preview.sheet ? { sheet: preview.sheet } : {}),
+          }
+        : undefined,
+    [preview, name],
+  );
+  const validationError = preview.error;
   async function upload(file?: File) {
     const ticket = ++request.current;
     setImage(undefined);
@@ -215,14 +226,23 @@ export default function AppearanceManager({
                   type="file"
                   accept="application/json,.json"
                   onChange={async (e) => {
+                    const ticket = ++configRequest.current;
                     const f = e.target.files?.[0];
                     if (!f) return;
+                    setConfig("");
                     if (f.size > 32768) {
                       setError("JSON ≤ 32 KiB");
                       return;
                     }
-                    setConfig(await f.text());
-                    setError("");
+                    try {
+                      const text = await f.text();
+                      if (ticket === configRequest.current) {
+                        setConfig(text);
+                        setError("");
+                      }
+                    } catch (e) {
+                      if (ticket === configRequest.current) setError(String(e));
+                    }
                   }}
                 />
               </label>
@@ -231,6 +251,7 @@ export default function AppearanceManager({
                 maxLength={32768}
                 value={config}
                 onChange={(e) => {
+                  configRequest.current++;
                   setConfig(e.target.value);
                   setError("");
                 }}

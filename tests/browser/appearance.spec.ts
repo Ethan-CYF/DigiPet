@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { readFileSync } from "node:fs";
 const fixture = "tests/fixtures/two-cells.png";
 const config = {
   version: 1,
@@ -35,6 +36,15 @@ test("single PNG crop, procedural movement, persistence, switch and delete", asy
   await page.goto("/");
   await manager(page);
   await page.getByLabel("Import PNG", { exact: true }).setInputFiles(fixture);
+  await page.getByLabel("Crop width", { exact: true }).fill("4");
+  await expect(
+    page.getByText("Save appearance / 儲存外觀", { exact: true }),
+  ).toBeDisabled();
+  await page.getByLabel("Crop x", { exact: true }).fill("1000");
+  await expect(
+    page.getByText("Save appearance / 儲存外觀", { exact: true }),
+  ).toBeDisabled();
+  await page.getByLabel("Crop x", { exact: true }).fill("0");
   await page.getByLabel("Crop width", { exact: true }).fill("32");
   await page.getByLabel("Appearance name").fill("Cropped red pet");
   await expect(page.locator(".preview canvas")).toBeVisible();
@@ -96,7 +106,11 @@ test("sheet frame order, FPS, idle fallback, swapping and hostile config rejecti
   await expect(
     page.getByText("Save appearance / 儲存外觀", { exact: true }),
   ).toBeDisabled();
-  await page.getByLabel("Sheet configuration").fill(JSON.stringify(config));
+  await page.getByLabel("Import sheet JSON", { exact: true }).setInputFiles({
+    name: "pack.json",
+    mimeType: "application/json",
+    buffer: Buffer.from(JSON.stringify(config)),
+  });
   await page.getByText("Save appearance / 儲存外觀", { exact: true }).click();
   await expect
     .poll(async () => {
@@ -142,15 +156,52 @@ test("sheet frame order, FPS, idle fallback, swapping and hostile config rejecti
   await expect(page.getByLabel("Current appearance")).not.toHaveValue(
     "default",
   );
-  await page
-    .getByLabel("Import PNG", { exact: true })
-    .setInputFiles({
-      name: "evil.png",
-      mimeType: "image/png",
-      buffer: Buffer.from('<svg onload="alert(1)"/>'),
-    });
+  await page.getByLabel("Import PNG", { exact: true }).setInputFiles({
+    name: "evil.png",
+    mimeType: "image/png",
+    buffer: Buffer.from('<svg onload="alert(1)"/>'),
+  });
   await expect(page.getByLabel("Current appearance")).toHaveValue("default");
   await expect(page.getByRole("alert").first()).toContainText("PNG");
   await page.getByLabel("Current appearance").press("Escape");
   await expect(page.getByLabel("Import PNG", { exact: true })).toHaveCount(0);
+});
+
+test("a saved PNG that passes header checks but fails decoding restores the default without crashing", async ({
+  page,
+}) => {
+  const crashes: string[] = [];
+  page.on("pageerror", (e) => crashes.push(e.message));
+  const source = readFileSync(fixture);
+  const start = source.indexOf(Buffer.from("IDAT")) - 4;
+  // Keep valid IHDR/IEND chunks but remove all compressed bitmap data.
+  const corrupted = Buffer.concat([
+    source.subarray(0, start),
+    source.subarray(start + source.readUInt32BE(start) + 12),
+  ]);
+  await page.goto("/");
+  await page.evaluate(
+    (png) =>
+      localStorage.setItem(
+        "digipet.appearances.v1",
+        JSON.stringify({
+          appearances: [{ id: "broken", name: "Broken", png }],
+          selected: "broken",
+        }),
+      ),
+    "data:image/png;base64," + corrupted.toString("base64"),
+  );
+  await page.reload();
+  await manager(page);
+  await expect(page.getByLabel("Current appearance")).toHaveValue("default");
+  await expect.poll(async () => (await pixels(page)).total).toBeGreaterThan(0);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          JSON.parse(localStorage.getItem("digipet.appearances.v1")!).selected,
+      ),
+    )
+    .toBe("default");
+  expect(crashes).toEqual([]);
 });

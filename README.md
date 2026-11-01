@@ -57,7 +57,7 @@ Linux 會產生 `.deb` 與 `.AppImage`；Windows 會產生 NSIS 安裝程式，�
 點擊寵物後使用「Appearance / 外觀」。外觀庫支援匯入、預覽、切換、刪除與還原預設，最多 8 個；資料儲存在此應用程式 webview 的 localStorage，重啟會還原選取外觀。儲存空間滿／被停用時會顯示錯誤且保留原設定。損壞圖片回退預設寵物。刪除只影響本機副本，不會修改來源檔案。
 
 - **單圖**：選擇 PNG，以原圖像素輸入 x、y、width、height 裁切，檢查原圖與動畫預覽，再儲存並套用。裁切後最長邊縮至 256。只有呼吸、浮動、跳動、縮放等程序動作，沒有 AI 去背或生成影格。
-- **Sprite sheet**：先選 PNG，再切換類型；選取 JSON 或編輯設定。只接受等格 PNG、由左至右再由上至下且從 0 起算的影格索引、1–30 FPS 與下列七狀態。未指定狀態的影格回退 `idle`；不添加額外狀態。
+- **Sprite sheet**：先選 PNG，再切換類型；選取 JSON 或編輯設定。只接受等格 PNG、由左至右再由上至下且從 0 起算的影格索引、1–30 FPS 與下列七狀態。未指定或空白的非 idle 狀態影格回退 `idle`；不添加額外狀態。
 - **七狀態**：`idle`、`walk`、`happy`、`thinking`、`talking`、`sleep`、`sad`。泡泡中的 State 選單可直接觸發每種狀態。拖曳使用 walk → idle；stub 訊息使用 thinking → talking → idle。手動切換會取消待執行的 stub 狀態轉換。系統偏好減少動態時，單圖停止週期動作（sheet 仍依 FPS 播放）。
 - **上傳提示**：單一置中角色、透明背景、周圍留白、無文字。UI 的 prompt tips 僅為準備圖片的文字建議，不呼叫任何生成服務。
 - **資料格式與安全界線**：PNG ≤ 2 MiB、每邊 ≤ 2048；JSON ≤ 32 KiB、每邊最多 32 格、總共 ≤ 256 格、每狀態 ≤ 256 影格。拒絕未知欄位、額外狀態、非法索引、非等格、APNG、SVG、URL、路徑及可執行欄位。不解壓素材、不執行素材程式碼，也不從設定讀檔。只透過使用者選取的檔案讀取 PNG／JSON；Rust 不接收素材或來源路徑。穿透每 100ms 依目前繪製的 128×128 Canvas alpha（>8/255）更新，保留透明洞與動作，不重用 M0 固定 16×16 遮罩。
@@ -136,7 +136,7 @@ Unsigned installers appear under `src-tauri/target/release/bundle/`: `.deb` and 
 Click the pet, then **Appearance / 外觀**. Import, preview, switch, delete or restore default locally, with up to eight appearances. The webview localStorage holds the library and selection across restarts. Full or disabled storage reports an error and preserves the previous setting. Bad images fall back to the default pet. Deletion removes only the local copy, leaving source files intact.
 
 - **Single image:** choose PNG, edit x/y/width/height in original pixels, check source and animated crop previews, then save and apply. Crops are reduced to at most 256 pixels on the longest edge. Breathing, floating, hopping and scaling are procedural; no AI cutout or generated frames.
-- **Sprite sheet:** choose PNG, switch type, then choose JSON or edit its data. Only equal cells, zero-based row-major frame order, 1–30 FPS and the seven states below are supported. Missing state frames fall back to `idle`; no additional states are introduced.
+- **Sprite sheet:** choose PNG, switch type, then choose JSON or edit its data. Only equal cells, zero-based row-major frame order, 1–30 FPS and the seven states below are supported. Missing or empty non-idle state frames fall back to `idle`; no additional states are introduced.
 - **Exactly seven states:** `idle`, `walk`, `happy`, `thinking`, `talking`, `sleep`, `sad`. The bubble's State selector triggers each one. Dragging uses walk → idle; stub replies use thinking → talking → idle. Manual state selection cancels pending stub transitions. Reduced-motion preference stops periodic single-image motion; sheets still play at their configured FPS.
 - **Prompt tips:** one centered character, transparent background, padding, no text. These are preparation suggestions only; the app does not generate images.
 - **Format/security limits:** PNG ≤ 2 MiB, each edge ≤ 2048; JSON ≤ 32 KiB, grid axes ≤ 32 cells, total ≤ 256 cells, ≤ 256 frames per state. Unknown fields, extra states, invalid indices, unequal cells, APNG, SVG, URLs, paths and executable fields are rejected. No archive extraction, pack code execution or file references. Only explicitly selected PNG/JSON files are read; Rust never receives pack contents or source paths. Click-through samples the actual rendered 128×128 Canvas alpha (>8/255) every 100ms, including holes and current motion, instead of reusing M0's fixed 16×16 mask.

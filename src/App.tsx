@@ -84,7 +84,16 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (open) input.current?.focus();
+    if (open) {
+      if (managing) {
+        bubble.current
+          ?.querySelector<HTMLSelectElement>(
+            '[aria-label="Current appearance"]',
+          )
+          ?.focus({ preventScroll: true });
+        if (bubble.current) bubble.current.scrollTop = 0;
+      } else input.current?.focus();
+    }
     if (!desktop) return;
     // Keep the pet anchored at the same screen location when the bubble expands upward.
     let disposed = false;
