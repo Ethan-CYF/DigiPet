@@ -1,4 +1,4 @@
-/** M1 contract only. No network requests, credentials, or model loading in M0. */
+/** Historical unwired contract. M1 makes no requests; later routing is API-only (ADR 0003). */
 export type ModelRoute =
   | { kind: "local"; modelId: string }
   | {
