@@ -36,13 +36,18 @@ vi.mock("@tauri-apps/api/event", () => ({
   },
 }));
 beforeEach(() => {
+  localStorage.clear();
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
   native.enabled = false;
   native.monitored = true;
   native.drag.mockReset().mockResolvedValue(undefined);
   native.invoke.mockReset();
   native.listeners.clear();
 });
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 const pet = () => screen.getByRole("button", { name: /DigiPet: click/ });
 function clickPet() {
   fireEvent.mouseDown(pet(), { button: 0, screenX: 100, screenY: 100 });
@@ -57,7 +62,7 @@ describe("pet interaction", () => {
     clickPet();
     expect(screen.queryByRole("textbox")).toBeNull();
   });
-  it("ignores whitespace and returns the exact Traditional Chinese stub as text", () => {
+  it("ignores whitespace and returns the exact Traditional Chinese stub as text", async () => {
     render(<App />);
     clickPet();
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "  " } });
@@ -67,8 +72,10 @@ describe("pet interaction", () => {
       target: { value: "你好 <script>test</script>" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Send message" }));
-    expect(screen.getByRole("status").textContent).toBe(
-      "(M0 stub) 收到：你好 <script>test</script>",
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toBe(
+        "(M0 stub) 收到：你好 <script>test</script>",
+      ),
     );
     expect(document.querySelector("script")).toBeNull();
     expect((screen.getByRole("textbox") as HTMLInputElement).value).toBe("");
@@ -108,5 +115,72 @@ describe("pet interaction", () => {
     await waitFor(() => expect(native.drag).toHaveBeenCalledTimes(1));
     fireEvent.mouseUp(pet(), { button: 0, screenX: 120, screenY: 100 });
     expect(screen.queryByRole("textbox")).toBeNull();
+  });
+});
+
+describe("M1 controls", () => {
+  it("exposes exactly seven states and resets an outstanding stub transition", async () => {
+    vi.useFakeTimers();
+    try {
+      const view = render(<App />);
+      clickPet();
+      const selector = screen.getByLabelText("Animation state");
+      expect(
+        [...selector.querySelectorAll("option")].map((o) => o.value),
+      ).toEqual([
+        "idle",
+        "walk",
+        "happy",
+        "thinking",
+        "talking",
+        "sleep",
+        "sad",
+      ]);
+      for (const state of [
+        "walk",
+        "happy",
+        "thinking",
+        "talking",
+        "sleep",
+        "sad",
+        "idle",
+      ]) {
+        fireEvent.change(selector, { target: { value: state } });
+        expect(
+          view.container
+            .querySelector(".pet canvas")
+            ?.getAttribute("data-state"),
+        ).toBe(state);
+      }
+      fireEvent.change(screen.getByLabelText("Message"), {
+        target: { value: "hello" },
+      });
+      fireEvent.click(screen.getByLabelText("Send message"));
+      expect((selector as HTMLSelectElement).value).toBe("thinking");
+      await act(async () => vi.advanceTimersByTime(300));
+      expect((selector as HTMLSelectElement).value).toBe("talking");
+      fireEvent.change(selector, { target: { value: "sleep" } });
+      await act(async () => vi.advanceTimersByTime(2000));
+      expect((selector as HTMLSelectElement).value).toBe("sleep");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it("opens local appearance controls, restores default and closes with Escape", () => {
+    render(<App />);
+    clickPet();
+    fireEvent.click(screen.getByText("Appearance / 外觀"));
+    expect(screen.getByLabelText("Import PNG")).toBeTruthy();
+    expect(
+      screen.getByLabelText("Current appearance").querySelectorAll("option"),
+    ).toHaveLength(1);
+    fireEvent.click(screen.getByText("Restore default / 還原"));
+    expect(
+      JSON.parse(localStorage.getItem("digipet.appearances.v1")!).selected,
+    ).toBe("default");
+    fireEvent.keyDown(screen.getByLabelText("Current appearance"), {
+      key: "Escape",
+    });
+    expect(screen.queryByLabelText("Import PNG")).toBeNull();
   });
 });

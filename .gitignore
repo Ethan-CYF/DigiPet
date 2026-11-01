@@ -5,3 +5,6 @@ work/
 *.local
 
 src-tauri/gen/
+
+playwright-report/
+test-results/

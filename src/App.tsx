@@ -8,12 +8,54 @@ import {
 import { isTauri, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { hitRegions, palette, pixels } from "./pet";
+import Sprite, { alphaRegions } from "./Sprite";
+import AppearanceManager from "./AppearanceManager";
+import { loadLibrary, saveLibrary, type Library } from "./modules/pet-upload";
+import {
+  STATES,
+  transition,
+  type AnimationState,
+  type PetState,
+} from "./animation";
 import { stubReply } from "./modules/ai-router";
 
 export default function App() {
   const desktop = isTauri();
   const [open, setOpen] = useState(false);
+  const [managing, setManaging] = useState(false);
+  const [library, setLibrary] = useState(loadLibrary);
+  const [animation, setAnimation] = useState<AnimationState>({
+    state: "idle",
+    since: performance.now(),
+  });
+  const timers = useRef<number[]>([]);
+  function changeState(state: PetState) {
+    timers.current.forEach(clearTimeout);
+    timers.current = [];
+    setAnimation((current) => transition(current, state, performance.now()));
+  }
+  function commit(next: Library) {
+    try {
+      saveLibrary(next);
+      setLibrary(next);
+      setError("");
+      return true;
+    } catch (e) {
+      setError(String(e));
+      return false;
+    }
+  }
+  function invalid(message: string) {
+    setError(message);
+    const next = { ...library, selected: "default" };
+    setLibrary(next);
+    try {
+      saveLibrary(next);
+    } catch {
+      /* In-memory default still recovers interaction. */
+    }
+  }
+  useEffect(() => () => timers.current.forEach(clearTimeout), []);
   const [text, setText] = useState("");
   const [reply, setReply] = useState("你好！我是 DigiPet。");
   const [error, setError] = useState("");
@@ -30,6 +72,9 @@ export default function App() {
     const subscriptions = [
       listen("pet-click", toggle),
       listen<string>("pet-warning", (e) => setError(e.payload)),
+      listen<boolean>("pet-moving", (e) =>
+        changeState(e.payload ? "walk" : "idle"),
+      ),
     ];
     return () => {
       void Promise.all(subscriptions).then((stops) =>
@@ -39,14 +84,32 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (open) input.current?.focus();
+    if (open) {
+      if (managing) {
+        bubble.current
+          ?.querySelector<HTMLSelectElement>(
+            '[aria-label="Current appearance"]',
+          )
+          ?.focus({ preventScroll: true });
+        if (bubble.current) bubble.current.scrollTop = 0;
+      } else input.current?.focus();
+    }
     if (!desktop) return;
     // Keep the pet anchored at the same screen location when the bubble expands upward.
-    const win = getCurrentWindow();
     let disposed = false;
     const publish = async () => {
-      const sprite = pet.current?.querySelector("svg")?.getBoundingClientRect();
-      const rectangles = sprite ? hitRegions(sprite) : [];
+      const canvas = pet.current?.querySelector("canvas");
+      const bounds = canvas?.getBoundingClientRect();
+      const ctx = canvas?.getContext("2d");
+      const rectangles =
+        ctx && bounds
+          ? alphaRegions(
+              ctx.getImageData(0, 0, 128, 128).data,
+              128,
+              128,
+              bounds,
+            )
+          : [];
       if (bubble.current) {
         const r = bubble.current.getBoundingClientRect();
         rectangles.push({
@@ -59,7 +122,10 @@ export default function App() {
       await invoke("set_hit_regions", { rectangles });
     };
     void (async () => {
-      await invoke("resize_pet", { expanded: open });
+      await invoke("resize_pet", {
+        expanded: open,
+        managing: open && managing,
+      });
       if (!disposed) await publish();
     })().catch((e) => setError(String(e)));
     const timer = window.setInterval(() => {
@@ -69,7 +135,7 @@ export default function App() {
       disposed = true;
       clearInterval(timer);
     };
-  }, [open]);
+  }, [open, managing]);
 
   async function mouseDown(event: MouseEvent<HTMLButtonElement>) {
     if (event.button !== 0) return;
@@ -97,6 +163,7 @@ export default function App() {
     if (!start || !event.buttons || start.dragged) return;
     if (Math.hypot(event.screenX - start.x, event.screenY - start.y) > 5) {
       start.dragged = true;
+      changeState("walk");
       if (desktop)
         await getCurrentWindow()
           .startDragging()
@@ -106,6 +173,7 @@ export default function App() {
   function mouseUp(event: MouseEvent<HTMLButtonElement>) {
     const start = gesture.current;
     gesture.current = null;
+    if (start?.dragged) changeState("idle");
     if (
       start &&
       !start.dragged &&
@@ -117,7 +185,24 @@ export default function App() {
     event.preventDefault();
     const message = text.trim();
     if (!message) return;
-    setReply(stubReply(message));
+    changeState("thinking");
+    timers.current.push(
+      window.setTimeout(() => {
+        setReply(stubReply(message));
+        setAnimation((current) =>
+          transition(current, "talking", performance.now()),
+        );
+        timers.current.push(
+          window.setTimeout(
+            () =>
+              setAnimation((current) =>
+                transition(current, "idle", performance.now()),
+              ),
+            1200,
+          ),
+        );
+      }, 300),
+    );
     setText("");
     input.current?.focus();
   }
@@ -126,18 +211,45 @@ export default function App() {
       onKeyDown={(e) => {
         if (e.key === "Escape") setOpen(false);
       }}
-      className={open ? "stage expanded" : "stage"}
+      className={
+        open ? `stage expanded${managing ? " managing" : ""}` : "stage"
+      }
     >
       {open && (
         <section ref={bubble} className="bubble" aria-label="DigiPet chat">
           <header>
             <span>
-              DigiPet <small>M0</small>
+              DigiPet <small>M1</small>
             </span>
             <button aria-label="Close chat" onClick={() => setOpen(false)}>
               ×
             </button>
           </header>
+          <div className="actions">
+            <button onClick={() => setManaging((value) => !value)}>
+              {managing ? "Chat / 聊天" : "Appearance / 外觀"}
+            </button>
+          </div>
+          <label className="state-control">
+            狀態 / State
+            <select
+              aria-label="Animation state"
+              value={animation.state}
+              onChange={(e) => changeState(e.target.value as PetState)}
+            >
+              {STATES.map((state) => (
+                <option key={state}>{state}</option>
+              ))}
+            </select>
+          </label>
+          {managing && (
+            <AppearanceManager
+              library={library}
+              commit={commit}
+              invalid={invalid}
+              animation={animation}
+            />
+          )}
           <p role="status">{reply}</p>
           <form onSubmit={send}>
             <input
@@ -174,24 +286,15 @@ export default function App() {
           }
         }}
       >
-        <svg viewBox="0 0 16 16" shapeRendering="crispEdges" aria-hidden="true">
-          {pixels.flatMap((row, y) =>
-            [...row].flatMap((color, x) =>
-              color === "." ? (
-                []
-              ) : (
-                <rect
-                  key={`${x}-${y}`}
-                  x={x}
-                  y={y}
-                  width="1"
-                  height="1"
-                  fill={palette[color]}
-                />
-              ),
-            ),
+        <Sprite
+          appearance={library.appearances.find(
+            (a) => a.id === library.selected,
           )}
-        </svg>
+          animation={animation}
+          onError={() =>
+            invalid("Bad image — restored default / 圖片失效，已還原預設")
+          }
+        />
       </button>
     </main>
   );
