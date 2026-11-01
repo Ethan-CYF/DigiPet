@@ -5,7 +5,7 @@
 
 ## Context
 
-M1 extends M0 on Windows and Linux X11. It implements appearance and animation, not AI routing. Later AI is API-only (OpenAI-compatible / DeepSeek); no llama.cpp, Ollama or model downloading. Existing AI/model interfaces remain unwired historical contracts.
+M1 extends M0 on Windows and Linux X11. It implements appearance and animation, not AI routing. Later AI is API-only (OpenAI-compatible / DeepSeek); no llama.cpp, Ollama or model downloading. At M1 the AI/model interfaces were unwired; M2 wires API setup and routing (ADR 0004).
 
 ## Decision
 

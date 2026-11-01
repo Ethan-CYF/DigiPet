@@ -1,0 +1,28 @@
+import { test, expect } from "@playwright/test";
+test("fresh wizard has explicit consent, fails closed without native keychain, then skips and restores", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByLabel("API setup", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("API base URL")).toBeFocused();
+  await page.getByLabel("API base URL").fill("https://example.test/v1");
+  await page.getByLabel("API model").fill("fixture-model");
+  await page.getByLabel("API key", { exact: true }).fill("fixture-secret");
+  await expect(page.getByText("Save / 儲存", { exact: true })).toBeDisabled();
+  await page.getByLabel("Cloud consent").check();
+  await page.getByLabel("API base URL").fill("https://example.test/v2");
+  await expect(page.getByLabel("Cloud consent")).not.toBeChecked();
+  await page.getByLabel("Cloud consent").check();
+  await page.getByText("Save / 儲存", { exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("Secure keychain unavailable");
+  expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain("fixture-secret");
+  await page.getByText("Skip for now / 暫時略過", { exact: true }).click();
+  await expect(page.getByLabel("API setup", { exact: true })).toHaveCount(0);
+  await page.getByLabel("Message", { exact: true }).fill("hello");
+  await page.getByLabel("Send message").click();
+  await expect(page.getByRole("status")).toHaveText("(M0 stub) 收到：hello");
+  await page.reload();
+  await expect(page.getByLabel("API setup", { exact: true })).toHaveCount(0);
+  await page.getByLabel("DigiPet: click to chat, drag to move").press("Enter");
+  await page.getByText("Settings / 設定", { exact: true }).click();
+  await expect(page.getByLabel("API setup", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("API key", { exact: true })).toHaveValue("");
+});

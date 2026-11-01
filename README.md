@@ -6,7 +6,7 @@
 
 DigiPet 是 MIT 授權的開源桌面寵物 AI 助理，使用 **Tauri v2 + React + TypeScript（Vite）+ Rust + pnpm**。目標平台為 **Windows 與 Linux**。M1 延續 M0 桌面核心，加入七種動畫狀態、本機外觀庫、單圖裁切與程序動作、等格 PNG sprite sheet，以及位置與外觀還原。保留透明置頂、拖曳、stub 聊天、穿透、托盤與快捷鍵。
 
-**M1 沒有 LLM、API 呼叫、模型下載或雲端上傳。** 傳送訊息只會在本機顯示 `(M0 stub) 收到：<text>`，不儲存對話。`pet-upload` 現在實作本機外觀流程；`ai-router` 與 `model-wizard` 保留為未接線的介面。後續 AI 僅支援 OpenAI 相容 API（例如 DeepSeek），不整合 llama.cpp、Ollama 或本地模型下載。
+M1 動畫與外觀已完成。**M2 加入首次啟動／設定精靈、安全憑證與 API 聊天**，支援 OpenAI 相容 API（例如 DeepSeek）。不整合 llama.cpp、Ollama 或本機模型下載。未設定或選擇略過時，傳送訊息仍只顯示本機 `(M0 stub) 收到：<text>`；不儲存對話。
 
 ### 開發與執行
 
@@ -20,7 +20,7 @@ Linux（Ubuntu 24.04 / Debian 12+）：
 sudo apt-get update
 sudo apt-get install -y build-essential pkg-config curl file \
   libwebkit2gtk-4.1-dev libxdo-dev libx11-dev \
-  libayatana-appindicator3-dev librsvg2-dev patchelf
+  libayatana-appindicator3-dev librsvg2-dev patchelf libdbus-1-dev
 ```
 
 ```sh
@@ -52,6 +52,14 @@ Linux 會產生 `.deb` 與 `.AppImage`；Windows 會產生 NSIS 安裝程式，�
 - Linux X11：需合成管理器才能正確顯示透明；置頂／隱藏工作列由視窗管理器決定。命中測試使用全域游標與不透明像素範圍，每 40ms 更新原生 `setIgnoreCursorEvents` 等效 Rust API，最多可能有一個取樣週期的切換延遲。可隨時以托盤／快捷鍵停用。
 - Linux Wayland：保守停用自動穿透與全域快捷鍵，不保存／還原視窗位置，因全域游標、定位、置頂、工作列提示及全域快捷鍵受 compositor 限制，無法保證。可選擇 X11 工作階段以使用完整功能；XWayland 也不保證。托盤需桌面提供 AppIndicator／StatusNotifier 支援（GNOME 可能需擴充套件）。快捷鍵若被佔用或無法註冊，程式會記錄錯誤並繼續啟動，請使用托盤。
 
+### M2 API 設定與隱私
+
+首次啟動會開啟精靈；之後可點寵物 → **Settings / 設定**。輸入 HTTPS base URL（例如 `https://api.deepseek.com/v1`，程式會附加 `/chat/completions`）、模型 ID（例如 `deepseek-chat`）及 API key。勾選雲端同意後才可儲存。儲存不會測試連線或送出訊息；傳送聊天時才會把單則文字、模型 ID 與驗證金鑰送到所選供應商，可能產生費用並適用其隱私政策。按 **Stop / 停止** 取消本機請求；供應商可能已處理／計費。
+
+金鑰透過 MIT/Apache-2.0 相容的 Rust `keyring` 存於 Windows Credential Manager 或 Linux Secret Service；Linux 需要已解鎖的桌面金鑰庫（如 GNOME Keyring/KWallet Secret Service）與 session D-Bus。不可用時不會降級成明文儲存，可解鎖後重試或略過。webview localStorage 只保存完成狀態、同意、端點、模型及隨機 `credentialRef`。重啟後會還原；API key 不會回填至 UI。修改設定需重新輸入金鑰與同意。略過會停用 API，並嘗試刪除上一個金鑰；金鑰庫鎖定時可能需在 OS 金鑰庫手動清除舊項目。
+
+**Skip for now / 暫時略過** 保留 stub，不連網。只支援非串流單則聊天；不傳送歷史對話、不保存聊天。前端預覽沒有 OS 金鑰庫，無法保存真實 API 設定；使用 `pnpm tauri dev` 驗證原生流程。CI 只用假憑證與 loopback 假服務，不呼叫付費 API。設定精靈與外觀管理皆使用 360×640 視窗。
+
 ### M1 外觀與動畫
 
 點擊寵物後使用「Appearance / 外觀」。外觀庫支援匯入、預覽、切換、刪除與還原預設，最多 8 個；資料儲存在此應用程式 webview 的 localStorage，重啟會還原選取外觀。儲存空間滿／被停用時會顯示錯誤且保留原設定。損壞圖片回退預設寵物。刪除只影響本機副本，不會修改來源檔案。
@@ -71,21 +79,21 @@ Linux 會產生 `.deb` 與 `.AppImage`；Windows 會產生 NSIS 安裝程式，�
 | 里程碑 | 範圍 |
 | --- | --- |
 | M0 | 桌面視窗、像素寵物動畫、拖曳、stub 聊天、穿透、托盤、CI |
-| M1 | 桌寵動畫與外觀：七狀態、單圖裁切／程序動作、sprite sheet、本機外觀管理、位置還原 |
-| M2 | API-only AI router：OpenAI 相容 API（如 DeepSeek） |
-| M3 | API 設定精靈：端點、模型選擇與憑證設定；不下載模型 |
+| M1（完成） | 桌寵動畫與外觀：七狀態、單圖裁切／程序動作、sprite sheet、本機外觀管理、位置還原 |
+| M2（本次） | API 設定精靈、雲端同意、安全憑證、API router 與可停止的聊天；不下載模型 |
+| M3 | API 體驗改善：串流、連線診斷與供應商相容性 |
 | M4 | 可選工具與使用者授權的助理動作 |
 | M5 | 可控的記憶、設定與隱私選項 |
 | M6 | Windows／Linux 相容性、效能、無障礙與測試 |
 | M7 | 穩定版本、文件、發行與社群貢獻流程 |
 
-架構決策：[0001-stack](docs/adr/0001-stack.md)、[0002-click-through](docs/adr/0002-click-through.md)、[0003-appearance](docs/adr/0003-appearance.md)。原有 [MIT LICENSE](LICENSE) 保留不變。
+架構決策：[0001-stack](docs/adr/0001-stack.md)、[0002-click-through](docs/adr/0002-click-through.md)、[0003-appearance](docs/adr/0003-appearance.md)、[0004-api-credentials](docs/adr/0004-api-credentials.md)。原有 [MIT LICENSE](LICENSE) 保留不變。
 
 ## English
 
 DigiPet is an **MIT-licensed open-source desktop pet AI assistant**, built with **Tauri v2, React, TypeScript, Vite, Rust and pnpm**, targeting **Windows and Linux only**. M1 extends the M0 desktop shell with seven animation states, a local appearance library, cropped single-image procedural motion, equal-cell PNG sprite sheets, and appearance/position restoration. Transparency, topmost, dragging, stub chat, click-through, tray and shortcuts remain available.
 
-**M1 has no LLM, remote API calls, model downloads or cloud uploads.** Sending a message produces only `(M0 stub) 收到：<text>` locally. Conversations are not persisted. `pet-upload` implements the local appearance pipeline; `ai-router` and `model-wizard` remain unwired contracts. Later AI is API-only through OpenAI-compatible endpoints such as DeepSeek; no llama.cpp, Ollama or model downloading.
+M1 animation and appearance are complete. **M2 adds the first-run/settings wizard, secure credentials and API chat** through OpenAI-compatible endpoints such as DeepSeek. No llama.cpp, Ollama or local model downloads. When skipped or unset, chat still produces `(M0 stub) 收到：<text>` locally. Conversations are not persisted.
 
 ### Develop and build
 
@@ -99,7 +107,7 @@ On Ubuntu 24.04 / Debian 12+:
 sudo apt-get update
 sudo apt-get install -y build-essential pkg-config curl file \
   libwebkit2gtk-4.1-dev libxdo-dev libx11-dev \
-  libayatana-appindicator3-dev librsvg2-dev patchelf
+  libayatana-appindicator3-dev librsvg2-dev patchelf libdbus-1-dev
 ```
 
 ```sh
@@ -131,6 +139,14 @@ Unsigned installers appear under `src-tauri/target/release/bundle/`: `.deb` and 
 - **Linux X11:** transparency requires compositing. The window manager controls topmost/taskbar hints. The backend polls global cursor position every 40ms and applies `set_ignore_cursor_events` (the Rust equivalent of `setIgnoreCursorEvents`) against opaque sprite row runs and the bubble. There may be up to one polling interval of transition latency. Disable through the tray/hotkey if needed.
 - **Linux Wayland:** automatic click-through, global shortcuts and position persistence are disabled. Compositor policy restricts global cursor access, positioning, topmost/taskbar hints and global shortcuts. Use an X11 session for the intended behavior; XWayland is not guaranteed. Trays need AppIndicator/StatusNotifier support; GNOME may require an extension. Shortcut registration conflicts/errors are logged without aborting startup; use the tray instead.
 
+### M2 API setup and privacy
+
+First launch opens the wizard; reopen it via the pet → **Settings / 設定**. Enter an HTTPS base URL (e.g. `https://api.deepseek.com/v1`; the app appends `/chat/completions`), model ID (e.g. `deepseek-chat`) and API key. Explicit cloud consent enables Save. Saving makes no network request. Sending chat transmits the single message, model ID and authentication key to the chosen provider; its fees and privacy policy apply. **Stop / 停止** cancels the local request; the provider may already have processed/billed it.
+
+Rust `keyring` (MIT/Apache-2.0 compatible) stores credentials in Windows Credential Manager or Linux Secret Service. Linux needs an unlocked desktop keychain (e.g. GNOME Keyring/KWallet Secret Service) and session D-Bus. Failure never falls back to plaintext; unlock and retry or skip. Webview localStorage holds only completion, consent, endpoint, model and random `credentialRef`, restored on restart. Keys are never returned to the UI. Editing requires re-entering the key and consent. Skip disables API and attempts to delete the previous key; if the keychain is locked, orphan entries may need removal in the OS keychain.
+
+**Skip for now / 暫時略過** keeps chat local and stubbed. M2 uses non-streaming, single-message chat; no conversation history is sent or persisted. Browser preview has no OS keychain and cannot save real API settings; use `pnpm tauri dev` for the native flow. CI uses fake credentials and loopback test servers, never paid APIs. Wizard and appearance manager use the 360×640 window.
+
 ### M1 appearance and animation
 
 Click the pet, then **Appearance / 外觀**. Import, preview, switch, delete or restore default locally, with up to eight appearances. The webview localStorage holds the library and selection across restarts. Full or disabled storage reports an error and preserves the previous setting. Bad images fall back to the default pet. Deletion removes only the local copy, leaving source files intact.
@@ -150,12 +166,12 @@ Click the pet, then **Appearance / 外觀**. Import, preview, switch, delete or 
 | Milestone | Scope |
 | --- | --- |
 | M0 | Desktop shell, pet animation, drag, stub chat, click-through, tray, CI |
-| M1 | Pet animation and appearance: seven states, single-image crop/procedural motion, sprite sheets, local library, position restore |
-| M2 | API-only AI router: OpenAI-compatible endpoints, e.g. DeepSeek |
-| M3 | API setup wizard: endpoint, model selection and credentials; no model downloads |
+| M1 (done) | Pet animation and appearance: seven states, single-image crop/procedural motion, sprite sheets, local library, position restore |
+| M2 (this change) | API setup wizard, cloud consent, secure credentials, API router and cancellable chat; no model downloads |
+| M3 | API experience: streaming, connection diagnostics and provider compatibility |
 | M4 | Optional tools and user-authorized assistant actions |
 | M5 | User-controlled memory, preferences and privacy |
 | M6 | Windows/Linux compatibility, performance, accessibility and testing |
 | M7 | Stable release, docs, distribution and contribution workflow |
 
-See [ADR 0001](docs/adr/0001-stack.md) and [ADR 0002](docs/adr/0002-click-through.md), and [ADR 0003](docs/adr/0003-appearance.md). The existing [MIT LICENSE](LICENSE) is unchanged.
+See [ADR 0001](docs/adr/0001-stack.md) and [ADR 0002](docs/adr/0002-click-through.md), and [ADR 0003](docs/adr/0003-appearance.md), and [ADR 0004](docs/adr/0004-api-credentials.md). The existing [MIT LICENSE](LICENSE) is unchanged.
