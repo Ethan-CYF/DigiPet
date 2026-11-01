@@ -1,5 +1,10 @@
 import { test, expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem("digipet.api.v1", JSON.stringify({ completed: true, cloudConsent: false }));
+  });
+});
 const fixture = "tests/fixtures/two-cells.png";
 const config = {
   version: 1,

@@ -37,6 +37,7 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 beforeEach(() => {
   localStorage.clear();
+  localStorage.setItem("digipet.api.v1", JSON.stringify({ completed: true, cloudConsent: false }));
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
   native.enabled = false;
   native.monitored = true;
