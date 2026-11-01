@@ -61,7 +61,13 @@ export default function App() {
       /* In-memory default still recovers interaction. */
     }
   }
-  useEffect(() => () => { timers.current.forEach(clearTimeout); pending.current?.abort(); }, []);
+  useEffect(
+    () => () => {
+      timers.current.forEach(clearTimeout);
+      pending.current?.abort();
+    },
+    [],
+  );
   const [text, setText] = useState("");
   const [reply, setReply] = useState("你好！我是 DigiPet。");
   const [error, setError] = useState("");
@@ -91,7 +97,10 @@ export default function App() {
 
   useEffect(() => {
     if (open) {
-      if (managing) {
+      if (settingUp) {
+        bubble.current?.querySelector<HTMLInputElement>('[aria-label="API base URL"]')?.focus({ preventScroll: true });
+        if (bubble.current) bubble.current.scrollTop = 0;
+      } else if (managing) {
         bubble.current
           ?.querySelector<HTMLSelectElement>(
             '[aria-label="Current appearance"]',
@@ -188,32 +197,66 @@ export default function App() {
       toggle();
   }
   function stop() {
-    pending.current?.abort(); pending.current = null; setBusy(false);
-    setReply("Stopped / 已停止"); changeState("idle");
+    pending.current?.abort();
+    pending.current = null;
+    setBusy(false);
+    setReply("Stopped / 已停止");
+    changeState("idle");
   }
   function send(event: FormEvent) {
     event.preventDefault();
     const message = text.trim();
     if (!message || busy || settingUp) return;
-    changeState("thinking"); setError(""); setText("");
+    changeState("thinking");
+    setError("");
+    setText("");
     if (settings.route && settings.cloudConsent) {
-      const controller = new AbortController(); pending.current = controller; setBusy(true);
-      void apiReply(message, settings.route, settings.cloudConsent, controller.signal).then(result => {
-        if (pending.current !== controller) return;
-        setReply(result); changeState("talking");
-        timers.current.push(window.setTimeout(() => changeState("idle"), 1200));
-      }).catch(e => {
-        if (pending.current !== controller) return;
-        setError(e.message); changeState("sad");
-      }).finally(() => {
-        if (pending.current === controller) { pending.current = null; setBusy(false); }
-      });
+      const controller = new AbortController();
+      pending.current = controller;
+      setBusy(true);
+      void apiReply(
+        message,
+        settings.route,
+        settings.cloudConsent,
+        controller.signal,
+      )
+        .then((result) => {
+          if (pending.current !== controller) return;
+          setReply(result);
+          changeState("talking");
+          timers.current.push(
+            window.setTimeout(() => changeState("idle"), 1200),
+          );
+        })
+        .catch((e) => {
+          if (pending.current !== controller) return;
+          setError(e.message);
+          changeState("sad");
+        })
+        .finally(() => {
+          if (pending.current === controller) {
+            pending.current = null;
+            setBusy(false);
+          }
+        });
     } else {
-      timers.current.push(window.setTimeout(() => {
-        setReply(stubReply(message));
-        setAnimation(current => transition(current, "talking", performance.now()));
-        timers.current.push(window.setTimeout(() => setAnimation(current => transition(current, "idle", performance.now())), 1200));
-      }, 300));
+      timers.current.push(
+        window.setTimeout(() => {
+          setReply(stubReply(message));
+          setAnimation((current) =>
+            transition(current, "talking", performance.now()),
+          );
+          timers.current.push(
+            window.setTimeout(
+              () =>
+                setAnimation((current) =>
+                  transition(current, "idle", performance.now()),
+                ),
+              1200,
+            ),
+          );
+        }, 300),
+      );
     }
     input.current?.focus();
   }
@@ -223,7 +266,9 @@ export default function App() {
         if (e.key === "Escape") setOpen(false);
       }}
       className={
-        open ? `stage expanded${managing || settingUp ? " managing" : ""}` : "stage"
+        open
+          ? `stage expanded${managing || settingUp ? " managing" : ""}`
+          : "stage"
       }
     >
       {open && (
@@ -237,12 +282,33 @@ export default function App() {
             </button>
           </header>
           <div className="actions">
-            <button onClick={() => { setSettingUp(false); setManaging((value) => !value); }}>
+            <button
+              onClick={() => {
+                setSettingUp(false);
+                setManaging((value) => !value);
+              }}
+            >
               {managing ? "Chat / 聊天" : "Appearance / 外觀"}
             </button>
-            <button disabled={busy} onClick={() => { setManaging(false); setSettingUp(value => !value); }}>Settings / 設定</button>
+            <button
+              disabled={busy}
+              onClick={() => {
+                setManaging(false);
+                setSettingUp((value) => !value);
+              }}
+            >
+              Settings / 設定
+            </button>
           </div>
-          {settingUp && <ApiSettings settings={settings} done={next => { setSettings(next); setSettingUp(false); }} />}
+          {settingUp && (
+            <ApiSettings
+              settings={settings}
+              done={(next) => {
+                setSettings(next);
+                setSettingUp(false);
+              }}
+            />
+          )}
           <label className="state-control">
             狀態 / State
             <select
@@ -273,7 +339,11 @@ export default function App() {
               maxLength={500}
               onChange={(e) => setText(e.target.value)}
             />
-            <button disabled={busy || settingUp} type="submit" aria-label="Send message">
+            <button
+              disabled={busy || settingUp}
+              type="submit"
+              aria-label="Send message"
+            >
               ↑
             </button>
           </form>
