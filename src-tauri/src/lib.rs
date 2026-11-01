@@ -80,14 +80,14 @@ fn left_button_down() -> Option<bool> {
     }
 }
 #[cfg(not(any(target_os = "linux", target_os = "windows")))]
-compile_error!("DigiPet M0 supports Windows and Linux only");
+compile_error!("DigiPet supports Windows and Linux only");
 
 #[tauri::command]
 fn set_hit_regions(
     rectangles: Vec<Rect>,
     state: tauri::State<'_, Mutex<Interaction>>,
 ) -> Result<(), String> {
-    if rectangles.len() > 256
+    if rectangles.len() > 8193
         || rectangles.iter().any(|r| {
             ![r.x, r.y, r.width, r.height].iter().all(|v| v.is_finite())
                 || r.width < 0.0
@@ -125,24 +125,79 @@ fn cancel_pet_gesture(state: tauri::State<'_, Mutex<Interaction>>) {
 }
 
 #[tauri::command]
-fn resize_pet(window: WebviewWindow, expanded: bool) -> Result<(), String> {
+fn resize_pet(window: WebviewWindow, expanded: bool, managing: bool) -> Result<(), String> {
     let scale = window.scale_factor().map_err(|e| e.to_string())?;
     let old_size = window.inner_size().map_err(|e| e.to_string())?;
     let old_position = window.outer_position().map_err(|e| e.to_string())?;
-    let new_height = ((if expanded { 400.0 } else { 200.0 }) * scale).round() as u32;
+    let new_height = ((if expanded && managing { 640.0 } else if expanded { 400.0 } else { 200.0 }) * scale).round() as u32;
     window
         .set_size(PhysicalSize::new(
-            (200.0 * scale).round() as u32,
+            ((if expanded && managing { 360.0 } else { 200.0 }) * scale).round() as u32,
             new_height,
         ))
         .map_err(|e| e.to_string())?;
     window
         .set_position(PhysicalPosition::new(
             old_position.x,
-            old_position.y + old_size.height as i32 - new_height as i32,
+            old_position.y.saturating_add(old_size.height as i32).saturating_sub(new_height as i32),
         ))
         .map_err(|e| e.to_string())?;
+    recover_position(&window)?;
     Ok(())
+}
+
+// Only this fixed application-owned file is accessed. Pack data never reaches Rust.
+fn position_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
+    app.path().app_config_dir().ok().map(|p| p.join("position-v1.txt"))
+}
+fn clamp_axis(value: i32, start: i32, extent: u32, size: u32) -> i32 {
+    value.clamp(start, (start as i64 + extent as i64 - size as i64).max(start as i64).min(i32::MAX as i64) as i32)
+}
+fn recover_position(window: &WebviewWindow) -> Result<(), String> {
+    if is_wayland() { return Ok(()); }
+    let p = window.outer_position().map_err(|e| e.to_string())?;
+    let size = window.outer_size().map_err(|e| e.to_string())?;
+    let monitors = window.available_monitors().map_err(|e| e.to_string())?;
+    // Choose the monitor nearest the pet's bottom-left anchor, including negative origins.
+    let Some(monitor) = monitors.iter().min_by_key(|m| {
+        let a = m.position(); let b = m.size();
+        let x = clamp_axis(p.x, a.x, b.width, size.width);
+        let y = clamp_axis(p.y, a.y, b.height, size.height);
+        let dx = p.x as i64 - x as i64; let dy = p.y as i64 - y as i64;
+        dx as i128 * dx as i128 + dy as i128 * dy as i128
+    }) else { return Ok(()); };
+    let origin = monitor.position(); let bounds = monitor.size();
+    window.set_position(PhysicalPosition::new(
+        clamp_axis(p.x, origin.x, bounds.width, size.width),
+        clamp_axis(p.y, origin.y, bounds.height, size.height),
+    )).map_err(|e| e.to_string())
+}
+fn restore_position(window: &WebviewWindow) {
+    if is_wayland() { return; }
+    let result = (|| -> Result<(), String> {
+        if let Some(path) = position_path(window.app_handle()) {
+            if let Ok(text) = std::fs::read_to_string(path) {
+                if text.len() <= 64 {
+                    let values: Vec<_> = text.split_whitespace().collect();
+                    if values.len() == 2 {
+                        if let (Ok(x), Ok(bottom)) = (values[0].parse::<i32>(), values[1].parse::<i32>()) {
+                            let height = window.outer_size().map_err(|e| e.to_string())?.height;
+                            window.set_position(PhysicalPosition::new(x, bottom.saturating_sub(height as i32))).map_err(|e| e.to_string())?;
+                        }
+                    }
+                }
+            }
+        }
+        recover_position(window)
+    })();
+    if let Err(e) = result { warn(window.app_handle(), e); }
+}
+fn persist_position(app: &tauri::AppHandle, position: (i32, i32)) -> Result<(), String> {
+    let path = position_path(app).ok_or("No application config directory")?;
+    std::fs::create_dir_all(path.parent().ok_or("No config parent")?).map_err(|e|e.to_string())?;
+    let temporary = path.with_extension("tmp");
+    std::fs::write(&temporary, format!("{} {}", position.0, position.1)).map_err(|e|e.to_string())?;
+    std::fs::rename(temporary, path).map_err(|e|e.to_string())
 }
 
 fn toggle_visibility(app: &tauri::AppHandle) -> tauri::Result<()> {
@@ -150,6 +205,7 @@ fn toggle_visibility(app: &tauri::AppHandle) -> tauri::Result<()> {
         if window.is_visible()? {
             window.hide()?;
         } else {
+            let _ = recover_position(&window);
             window.show()?;
             window.set_focus()?;
         }
@@ -235,6 +291,13 @@ pub fn run() {
                             set_click_through(app, menu_check.is_checked().unwrap_or(false))
                         }
                         "quit" => {
+                            if let Some(w) = app.get_webview_window("main") {
+                                if !is_wayland() {
+                                    if let (Ok(p), Ok(s)) = (w.outer_position(), w.outer_size()) {
+                                        if let Err(e) = persist_position(app, (p.x, p.y.saturating_add(s.height as i32))) { warn(app, e); }
+                                    }
+                                }
+                            }
                             app.exit(0);
                             Ok(())
                         }
@@ -281,8 +344,13 @@ pub fn run() {
                     );
                 }
             }
+            if let Some(window) = app.get_webview_window("main") { restore_position(&window); }
             let handle = app.handle().clone();
-            std::thread::spawn(move || loop {
+            std::thread::spawn(move || {
+              let mut last_position = None;
+              let mut saved_position = None;
+              let mut settled = Instant::now();
+              loop {
                 std::thread::sleep(Duration::from_millis(40));
                 let Some(window) = handle.get_webview_window("main") else {
                     break;
@@ -298,20 +366,36 @@ pub fn run() {
                 ) else {
                     continue;
                 };
+                if !is_wayland() {
+                    if let Ok(size) = window.outer_size() {
+                        let position = (outer.x, outer.y.saturating_add(size.height as i32));
+                        if last_position != Some(position) {
+                            last_position = Some(position); settled = Instant::now();
+                        } else if saved_position != Some(position) && settled.elapsed() > Duration::from_millis(500) {
+                            if let Err(e) = persist_position(&handle, position) { warn(&handle, e); }
+                            saved_position = Some(position);
+                        }
+                    }
+                }
                 let state = handle.state::<Mutex<Interaction>>();
                 let mut state = state.lock().expect("interaction mutex");
                 let mut clicked = false;
+                let mut moving_event = None;
                 if let Some(gesture) = state.gesture.as_mut() {
                     let distance = (cursor.x - gesture.cursor.0).hypot(cursor.y - gesture.cursor.1);
                     // Read native window getters before locking shared state: getters may
                     // wait on the UI thread, which also handles commands needing this mutex.
-                    let window_moved = (outer.x - gesture.origin.0).abs() as f64 > 5.0 * scale
-                        || (outer.y - gesture.origin.1).abs() as f64 > 5.0 * scale;
+                    let window_moved = (outer.x as i64 - gesture.origin.0 as i64).abs() as f64 > 5.0 * scale
+                        || (outer.y as i64 - gesture.origin.1 as i64).abs() as f64 > 5.0 * scale;
+                    let was_moved = gesture.moved;
                     gesture.moved |= distance > 5.0 * scale || window_moved;
+                    if gesture.moved && !was_moved { moving_event = Some(true); }
                     if left_button_down() == Some(false) {
                         clicked = !gesture.moved;
+                        if gesture.moved { moving_event = Some(false); }
                         state.gesture = None;
                     } else if gesture.started.elapsed() > Duration::from_secs(60) {
+                        moving_event = Some(false);
                         state.gesture = None;
                     }
                 }
@@ -338,9 +422,11 @@ pub fn run() {
                     }
                 }
                 drop(state);
+                if let Some(moving) = moving_event { let _ = handle.emit("pet-moving", moving); }
                 if clicked {
                     let _ = handle.emit("pet-click", ());
                 }
+              }
             });
             Ok(())
         })
@@ -351,6 +437,13 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn screen_clamp_handles_negative_monitors_and_oversized_windows() {
+        assert_eq!(clamp_axis(-1800, -1920, 1920, 200), -1800);
+        assert_eq!(clamp_axis(5000, 0, 1920, 200), 1720);
+        assert_eq!(clamp_axis(-9999, 0, 1920, 200), 0);
+        assert_eq!(clamp_axis(20, 0, 100, 200), 0);
+    }
     #[test]
     fn hit_regions_respect_transparent_gaps_and_exclusive_edges() {
         let regions = [
