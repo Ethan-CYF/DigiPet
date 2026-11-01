@@ -223,3 +223,8 @@ legend {
   width: 128px;
   height: 128px;
 }
+.api-settings form { display: block; }
+.api-settings form button { width: auto; margin: 4px; padding: 7px; }
+.api-settings input[type=checkbox] { width: auto; }
+.api-settings p { max-height: none; }
+button:disabled { opacity: .5; cursor: default; }
