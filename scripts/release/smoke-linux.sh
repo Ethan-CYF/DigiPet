@@ -10,7 +10,7 @@ for name in history packs data; do
   printf 'M6 disposable CI fixture\n' > "$XDG_DATA_HOME/io.github.ethan-cyf.digipet/ci-$name-sentinel.txt"
 done
 printf 'M6 disposable CI fixture\n' > "$XDG_CONFIG_HOME/io.github.ethan-cyf.digipet/ci-config-sentinel.txt"
-cleanup() { sudo apt-get remove -y digipet; }
+cleanup() { sudo apt-get remove -y digi-pet; }
 trap cleanup EXIT
 launch() {
   local label=$1
@@ -33,7 +33,7 @@ launch deb /usr/bin/digipet
 # Extract-and-run needs no FUSE mount, but does exercise the bundled AppRun and webview.
 chmod +x work/downloaded/DigiPet-linux-x64.AppImage
 APPIMAGE_EXTRACT_AND_RUN=1 launch appimage "$(realpath work/downloaded/DigiPet-linux-x64.AppImage)"
-sudo apt-get remove -y digipet
+sudo apt-get remove -y digi-pet
 trap - EXIT
 ! command -v digipet
 for file in "$XDG_DATA_HOME/io.github.ethan-cyf.digipet"/ci-*-sentinel.txt "$XDG_CONFIG_HOME/io.github.ethan-cyf.digipet/ci-config-sentinel.txt"; do

@@ -70,8 +70,8 @@ WebView 互動、實體桌面及 Wayland 均需額外驗證。
 
 Quit DigiPet first. Windows: Settings → Apps → DigiPet → Uninstall; leave
 **Delete app data** unchecked to keep packs/history/settings. Linux:
-`sudo apt remove digipet`, or delete the AppImage. User data stays unless explicitly
+`sudo apt remove digi-pet`, or delete the AppImage. User data stays unless explicitly
 removed. Keychain entries and tool-exported files require separate user action.
 先退出 DigiPet。Windows：設定 → 應用程式 → DigiPet → 解除安裝；不要勾選 **Delete app data**
-即可保留外觀、歷史及設定。Linux：`sudo apt remove digipet` 或刪除 AppImage。
+即可保留外觀、歷史及設定。Linux：`sudo apt remove digi-pet` 或刪除 AppImage。
 金鑰庫項目及匯出的工具檔案需另行處理；詳見安裝指引。

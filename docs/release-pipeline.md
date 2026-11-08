@@ -28,7 +28,7 @@ provider tests remain. Dependencies are locked; platform targets explicitly x64.
 - `DigiPet-linux-x64-unsigned`: `DigiPet-linux-x64.AppImage`, `DigiPet-linux-x64.deb` and platform `SHA256SUMS`.
 - `DigiPet-unsigned-windows-linux-x64`: all three installers and a complete `SHA256SUMS`.
 - `installer-smoke-windows-x64`, `installer-smoke-linux-x64`: evidence and explicit limitations.
-- `performance-Linux`: existing browser/performance evidence.
+- `M5-performance-Linux`: existing browser/performance evidence.
 
 Installers are hashed, uploaded, **downloaded again and verified before smoke**.
 After both platforms succeed, downloaded platform manifests are checked and merged

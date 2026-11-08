@@ -4,6 +4,7 @@ $installer = (Resolve-Path 'work/downloaded/DigiPet-Setup-windows-x64.exe').Path
 if ((Get-AuthenticodeSignature $installer).Status -ne 'NotSigned') { throw 'Expected an UNSIGNED installer' }
 $installDir = Join-Path $env:RUNNER_TEMP 'digipet-m6-install'
 $evidence = 'work/smoke-windows.txt'
+'CI-only Windows installer smoke started' | Set-Content $evidence
 # These known folders belong exclusively to the disposable GitHub runner account.
 $dataDirs = @(
   (Join-Path ([Environment]::GetFolderPath('ApplicationData')) 'io.github.ethan-cyf.digipet'),
@@ -31,15 +32,22 @@ try {
   if ($app.HasExited) { throw "Application exited early: $($app.ExitCode)" }
   # A real top-level HWND is stronger evidence than a sleeping process alone.
   if ($app.MainWindowHandle -eq 0) { throw 'No application window found' }
-  'PASS: unsigned per-user silent install and native window launch' | Set-Content $evidence
+  'PASS: unsigned per-user silent install and native window launch' | Add-Content $evidence
+} catch {
+  "FAIL: $($_.Exception.Message)" | Add-Content $evidence
+  throw
 } finally {
   if ($app -and !$app.HasExited) { Stop-Process -Id $app.Id -Force }
   $uninstaller = Join-Path $installDir 'uninstall.exe'
   if (Test-Path $uninstaller) {
-    # _?= disables the NSIS self-copy so -Wait observes completion; it must be last.
-    $remove = Start-Process -FilePath $uninstaller -ArgumentList @('/S', "_?=$installDir") -Wait -PassThru
+    $remove = Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru
     if ($remove.ExitCode -ne 0) { throw "Uninstaller exit: $($remove.ExitCode)" }
-    if (Test-Path (Join-Path $installDir 'digipet.exe')) { throw 'Uninstall left the application executable' }
+    # NSIS self-copies and can return before its child finishes. Wait for actual removal.
+    $deadline = (Get-Date).AddSeconds(30)
+    while (((Test-Path (Join-Path $installDir 'digipet.exe')) -or (Test-Path $uninstaller)) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 500 }
+    if ((Test-Path (Join-Path $installDir 'digipet.exe')) -or (Test-Path $uninstaller)) { throw 'Uninstall did not remove installed executables' }
+    $entries = @(Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -eq 'DigiPet' })
+    if ($entries.Count -ne 0) { throw 'Uninstall left a per-user installed-app entry' }
     foreach ($file in $sentinels) {
       if (!(Test-Path $file) -or (Get-Content $file) -ne 'M6 disposable CI fixture') { throw 'Uninstall changed CI user data' }
     }

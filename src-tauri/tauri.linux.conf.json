@@ -1,1 +1,6 @@
-{ "bundle": { "targets": ["deb", "appimage"] } }
+{
+  "bundle": {
+    "targets": ["deb", "appimage"],
+    "linux": { "deb": { "depends": ["libxdo3", "libx11-6"] } }
+  }
+}

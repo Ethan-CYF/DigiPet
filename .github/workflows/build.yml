@@ -65,16 +65,26 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always() && runner.os == 'Linux'
         with:
-          name: performance-${{ runner.os }}
+          name: M5-performance-${{ runner.os }}
           overwrite: true
           path: test-results/
       - run: cargo check --locked --manifest-path src-tauri/Cargo.toml
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
       - name: Build unsigned x64 installers
+        shell: bash
         env:
           APPIMAGE_EXTRACT_AND_RUN: '1'
+          BUILD_TARGET: ${{ matrix.target }}
         # No signing/updater keys, certificates, custom secrets or updater artifacts.
-        run: pnpm tauri build --ci --target ${{ matrix.target }}
+        run: |
+          mkdir -p work
+          set +e
+          pnpm tauri build --ci --no-sign --target "$BUILD_TARGET" -- --locked 2>&1 | tee work/installer-build.log
+          result=${PIPESTATUS[0]}
+          if [ "$result" -ne 0 ]; then
+            node -e 'const fs = require("node:fs"); const tail = fs.readFileSync("work/installer-build.log", "utf8").replace(/\u001b\[[0-9;]*m/g, "").trim().split(/\r?\n/).slice(-40).join("\n"); console.log("::error title=Installer build failure::" + tail.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A"));'
+          fi
+          exit "$result"
       - name: Stage every installer and generate SHA256SUMS
         run: node scripts/release/artifacts.mjs collect ${{ matrix.platform }} src-tauri/target/${{ matrix.target }}/release/bundle work/installers
       - name: Upload unsigned platform artifacts
@@ -106,6 +116,7 @@ jobs:
           name: installer-smoke-${{ matrix.platform }}-x64
           overwrite: true
           path: |
+            work/installer-build.log
             work/smoke-*.log
             work/smoke-*.txt
           if-no-files-found: warn

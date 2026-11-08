@@ -41,8 +41,9 @@ If downloading Linux files only, select both exact entries, require exactly two,
 then verify them / 如只下載 Linux 檔案，先確認剛好有兩個對應項目，再校驗：
 
 ```sh
-awk '$2 == "DigiPet-linux-x64.AppImage" || $2 == "DigiPet-linux-x64.deb"' SHA256SUMS > linux-SHA256SUMS
-[ "$(wc -l < linux-SHA256SUMS)" -eq 2 ] && sha256sum --check --strict linux-SHA256SUMS
+awk '$2 == "DigiPet-linux-x64.AppImage" || $2 == "DigiPet-linux-x64.deb" { count[$2]++; print }
+  END { if (count["DigiPet-linux-x64.AppImage"] != 1 || count["DigiPet-linux-x64.deb"] != 1) exit 1 }' \
+  SHA256SUMS > linux-SHA256SUMS && sha256sum --check --strict linux-SHA256SUMS
 ```
 
 Every downloaded installer must say `OK`. On missing entries or any mismatch,
@@ -90,6 +91,8 @@ chmod +x DigiPet-linux-x64.AppImage
 ./DigiPet-linux-x64.AppImage
 ```
 
+The Debian package ID is `digi-pet`; the executable is `digipet`. / Debian 套件 ID 為 `digi-pet`，執行檔為 `digipet`。
+
 The deb declares its native library dependencies; `apt install` resolves them.
 AppImage still needs host libraries. FUSE execution may require `libfuse2t64` on
 Ubuntu 24.04; when FUSE is unavailable, use:
@@ -105,8 +108,8 @@ Wayland disables automatic click-through, global shortcuts and position persiste
 X11 transparency needs a compositor; GNOME trays may need an AppIndicator extension.
 以 Ubuntu 24.04 打包不保證支援較舊 glibc／WebKit；Wayland 有穿透、快捷鍵及位置還原限制。
 
-Quit before `sudo apt remove digipet`, or delete the AppImage. Neither operation
-removes user data. / 先退出，再執行 `sudo apt remove digipet` 或刪除 AppImage；兩者均保留使用者資料。
+Quit before `sudo apt remove digi-pet`, or delete the AppImage. Neither operation
+removes user data. / 先退出，再執行 `sudo apt remove digi-pet` 或刪除 AppImage；兩者均保留使用者資料。
 
 ## Data and manual updates / 資料及手動更新
 
