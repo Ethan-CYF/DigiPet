@@ -1,1 +1,11 @@
-{ "bundle": { "targets": ["nsis"] } }
+{
+  "bundle": {
+    "targets": ["nsis"],
+    "windows": {
+      "certificateThumbprint": null,
+      "signCommand": null,
+      "webviewInstallMode": { "type": "downloadBootstrapper", "silent": false },
+      "nsis": { "installMode": "currentUser", "languages": ["English", "TradChinese"] }
+    }
+  }
+}

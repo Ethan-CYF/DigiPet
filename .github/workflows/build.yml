@@ -1,7 +1,8 @@
 name: Build desktop pet
 on:
   push:
-    branches: [main, feat/m5-hardening]
+    branches: [main, feat/m6-release-pipeline]
+    tags: ['v*']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -9,23 +10,31 @@ permissions:
   contents: read
 concurrency:
   group: build-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 jobs:
   build:
     strategy:
       fail-fast: false
       matrix:
-        # Playwright 1.58.2 supports Noble; ubuntu-latest can select unsupported Ubuntu 26.
-        os: [ubuntu-24.04, windows-latest]
+        include:
+          - os: ubuntu-24.04
+            platform: linux
+            target: x86_64-unknown-linux-gnu
+          - os: windows-latest
+            platform: windows
+            target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version: '22'
           cache: pnpm
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
@@ -35,7 +44,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential pkg-config file libxdo-dev libx11-dev libayatana-appindicator3-dev librsvg2-dev patchelf xvfb dbus-x11 libdbus-1-dev
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential pkg-config file libxdo-dev libx11-dev libayatana-appindicator3-dev librsvg2-dev patchelf xvfb x11-utils dbus-x11 libdbus-1-dev
       - run: pnpm install --frozen-lockfile
       - run: cargo test --locked --manifest-path tools-core/Cargo.toml
       - name: Repository credential-pattern scan
@@ -43,6 +52,8 @@ jobs:
       - run: pnpm build
       - name: Unit and interaction tests (mock APIs only)
         run: pnpm test
+      - name: Integrity and draft-only release guard tests (mock GitHub)
+        run: pnpm test:release
       - name: Mock model through real Rust tools
         run: pnpm test:tools
       - name: Browser setup, chat, tools and appearance smoke (Linux)
@@ -54,44 +65,96 @@ jobs:
         uses: actions/upload-artifact@v4
         if: always() && runner.os == 'Linux'
         with:
-          name: M5-performance-${{ runner.os }}
+          name: performance-${{ runner.os }}
+          overwrite: true
           path: test-results/
       - run: cargo check --locked --manifest-path src-tauri/Cargo.toml
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
-      # M4 verifies native binaries without release-only NSIS/AppRun downloads.
-      - name: Build native application
-        run: pnpm tauri build --no-bundle
-      - name: Build unsigned installers (manual only)
-        if: github.event_name == 'workflow_dispatch'
-        shell: bash
+      - name: Build unsigned x64 installers
         env:
-          APPIMAGE_EXTRACT_AND_RUN: "1"
-        run: |
-          set +e
-          pnpm tauri build 2>&1 | tee installer-build.log
-          result=${PIPESTATUS[0]}
-          if [ "$result" -ne 0 ]; then
-            node -e 'const fs = require("node:fs"); const tail = fs.readFileSync("installer-build.log", "utf8").replace(/\u001b\[[0-9;]*m/g, "").trim().split(/\r?\n/).slice(-35).join("\n"); console.log("::error title=Installer build failure::" + tail.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A"));'
-          fi
-          exit "$result"
-      - name: Linux X11 startup smoke
-        if: runner.os == 'Linux'
-        shell: bash
-        env:
-          GDK_BACKEND: x11
-          WEBKIT_DISABLE_COMPOSITING_MODE: "1"
-        run: |
-          set +e
-          dbus-run-session -- xvfb-run -a timeout 8s src-tauri/target/release/digipet > native-smoke.log 2>&1
-          result=$?
-          cat native-smoke.log
-          test "$result" -eq 124
-      - uses: actions/upload-artifact@v4
-        if: github.event_name == 'workflow_dispatch'
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        # No signing/updater keys, certificates, custom secrets or updater artifacts.
+        run: pnpm tauri build --ci --target ${{ matrix.target }}
+      - name: Stage every installer and generate SHA256SUMS
+        run: node scripts/release/artifacts.mjs collect ${{ matrix.platform }} src-tauri/target/${{ matrix.target }}/release/bundle work/installers
+      - name: Upload unsigned platform artifacts
+        uses: actions/upload-artifact@v4
         with:
-          name: DigiPet-${{ runner.os }}-unsigned
-          path: |
-            src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/appimage/*.AppImage
-            src-tauri/target/release/bundle/nsis/*-setup.exe
+          name: DigiPet-${{ matrix.platform }}-x64-unsigned
+          overwrite: true
+          path: work/installers/*
           if-no-files-found: error
+          retention-days: 14
+      - name: Download artifacts for independent integrity and install smoke
+        uses: actions/download-artifact@v4
+        with:
+          name: DigiPet-${{ matrix.platform }}-x64-unsigned
+          path: work/downloaded
+      - name: Verify downloaded installer files
+        run: node scripts/release/artifacts.mjs verify work/downloaded ${{ matrix.platform }}
+      - name: Windows silent install, native launch and uninstall (CI data only)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/release/smoke-windows.ps1
+      - name: Linux package install, X11 launch and removal (CI data only)
+        if: runner.os == 'Linux'
+        run: bash scripts/release/smoke-linux.sh
+      - name: Installer smoke evidence and limitations
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: installer-smoke-${{ matrix.platform }}-x64
+          overwrite: true
+          path: |
+            work/smoke-*.log
+            work/smoke-*.txt
+          if-no-files-found: warn
+  integrity:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: DigiPet-*-x64-unsigned
+          path: work/downloaded-platforms
+      - name: Reverify downloads and combine all three installers with SHA256SUMS
+        run: node scripts/release/artifacts.mjs combine work/downloaded-platforms work/release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: DigiPet-unsigned-windows-linux-x64
+          overwrite: true
+          path: work/release/*
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/download-artifact@v4
+        with:
+          name: DigiPet-unsigned-windows-linux-x64
+          path: work/final-download
+      - run: node scripts/release/artifacts.mjs verify work/final-download
+  draft:
+    # Manual dispatch and branch/PR runs upload workflow artifacts ONLY.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    needs: integrity
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: DigiPet-unsigned-windows-linux-x64
+          path: work/release
+      - name: Existing tag only; create/reuse Draft, never publish; verify downloaded release assets
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            const { execFileSync } = require('node:child_process');
+            const { prepareDraft } = await import(`${process.env.GITHUB_WORKSPACE}/scripts/release/draft-release.mjs`);
+            const sourceSha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+            const url = await prepareDraft({ github, context, directory: 'work/release', sourceSha });
+            core.notice(`Unsigned draft only: ${url}`);
