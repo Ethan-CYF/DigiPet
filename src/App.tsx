@@ -1,4 +1,5 @@
 import { reportRecovery } from "./modules/recovery";
+import UpdateNotice, { useUpdateNotice } from "./UpdateNotice";
 import DataSettings from "./DataSettings";
 import LocalTools from "./LocalTools";
 import {
@@ -38,6 +39,7 @@ import {
 import { redact, withAbort } from "./modules/redaction";
 export default function App() {
   const desktop = isTauri();
+  const updateNotice = useUpdateNotice(desktop);
   const [toolsEnabled, setToolsEnabled] = useState(false);
   const [preview, setPreview] = useState<Preview | null>(null);
   const approval = useRef<((approved: boolean) => void) | null>(null);
@@ -462,12 +464,13 @@ export default function App() {
         <section ref={bubble} className="bubble" aria-label="DigiPet chat">
           <header>
             <span>
-              DigiPet <small>M5</small>
+              DigiPet <small>M6</small>
             </span>
             <button aria-label="Close chat" onClick={() => setOpen(false)}>
               ×
             </button>
           </header>
+          <UpdateNotice {...updateNotice} />
           <div className="actions">
             <button
               onClick={() => {

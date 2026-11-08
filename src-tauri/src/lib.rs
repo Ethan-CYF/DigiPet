@@ -1,5 +1,6 @@
 mod api;
 mod tools;
+mod updates;
 use serde::Deserialize;
 use std::{
     sync::Mutex,
@@ -294,6 +295,7 @@ fn warn(app: &tauri::AppHandle, error: impl std::fmt::Display) {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_opener::init())
         .manage(tools::Tools::default())
         .manage(api::Requests::default())
         .manage(Mutex::new(Interaction {
@@ -307,6 +309,8 @@ pub fn run() {
             begin_pet_gesture,
             cancel_pet_gesture,
             resize_pet,
+            updates::check_for_update,
+            updates::open_release_page,
             api::save_api_credential,
             api::remove_api_credential,
             api::redact_chat_text,
