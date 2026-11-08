@@ -17,11 +17,17 @@ import {
   type AnimationState,
   type PetState,
 } from "./animation";
-import { stubReply } from "./modules/ai-router";
+import { apiReply, stubReply } from "./modules/ai-router";
+import ApiSettings from "./ApiSettings";
+import { loadSettings } from "./modules/model-wizard";
 
 export default function App() {
   const desktop = isTauri();
-  const [open, setOpen] = useState(false);
+  const [settings, setSettings] = useState(loadSettings);
+  const [settingUp, setSettingUp] = useState(!settings.completed);
+  const [open, setOpen] = useState(!settings.completed);
+  const pending = useRef<AbortController | null>(null);
+  const [busy, setBusy] = useState(false);
   const [managing, setManaging] = useState(false);
   const [library, setLibrary] = useState(loadLibrary);
   const [animation, setAnimation] = useState<AnimationState>({
@@ -55,7 +61,13 @@ export default function App() {
       /* In-memory default still recovers interaction. */
     }
   }
-  useEffect(() => () => timers.current.forEach(clearTimeout), []);
+  useEffect(
+    () => () => {
+      timers.current.forEach(clearTimeout);
+      pending.current?.abort();
+    },
+    [],
+  );
   const [text, setText] = useState("");
   const [reply, setReply] = useState("你好！我是 DigiPet。");
   const [error, setError] = useState("");
@@ -85,7 +97,10 @@ export default function App() {
 
   useEffect(() => {
     if (open) {
-      if (managing) {
+      if (settingUp) {
+        bubble.current?.querySelector<HTMLInputElement>('[aria-label="API base URL"]')?.focus({ preventScroll: true });
+        if (bubble.current) bubble.current.scrollTop = 0;
+      } else if (managing) {
         bubble.current
           ?.querySelector<HTMLSelectElement>(
             '[aria-label="Current appearance"]',
@@ -124,7 +139,7 @@ export default function App() {
     void (async () => {
       await invoke("resize_pet", {
         expanded: open,
-        managing: open && managing,
+        managing: open && (managing || settingUp),
       });
       if (!disposed) await publish();
     })().catch((e) => setError(String(e)));
@@ -135,7 +150,7 @@ export default function App() {
       disposed = true;
       clearInterval(timer);
     };
-  }, [open, managing]);
+  }, [open, managing, settingUp]);
 
   async function mouseDown(event: MouseEvent<HTMLButtonElement>) {
     if (event.button !== 0) return;
@@ -181,29 +196,68 @@ export default function App() {
     )
       toggle();
   }
+  function stop() {
+    pending.current?.abort();
+    pending.current = null;
+    setBusy(false);
+    setReply("Stopped / 已停止");
+    changeState("idle");
+  }
   function send(event: FormEvent) {
     event.preventDefault();
     const message = text.trim();
-    if (!message) return;
+    if (!message || busy || settingUp) return;
     changeState("thinking");
-    timers.current.push(
-      window.setTimeout(() => {
-        setReply(stubReply(message));
-        setAnimation((current) =>
-          transition(current, "talking", performance.now()),
-        );
-        timers.current.push(
-          window.setTimeout(
-            () =>
-              setAnimation((current) =>
-                transition(current, "idle", performance.now()),
-              ),
-            1200,
-          ),
-        );
-      }, 300),
-    );
+    setError("");
     setText("");
+    if (settings.route && settings.cloudConsent) {
+      const controller = new AbortController();
+      pending.current = controller;
+      setBusy(true);
+      void apiReply(
+        message,
+        settings.route,
+        settings.cloudConsent,
+        controller.signal,
+      )
+        .then((result) => {
+          if (pending.current !== controller) return;
+          setReply(result);
+          changeState("talking");
+          timers.current.push(
+            window.setTimeout(() => changeState("idle"), 1200),
+          );
+        })
+        .catch((e) => {
+          if (pending.current !== controller) return;
+          setError(e.message);
+          changeState("sad");
+        })
+        .finally(() => {
+          if (pending.current === controller) {
+            pending.current = null;
+            setBusy(false);
+          }
+        });
+    } else {
+      timers.current.push(
+        window.setTimeout(() => {
+          setReply(stubReply(message));
+          setAnimation((current) =>
+            transition(current, "talking", performance.now()),
+          );
+          timers.current.push(
+            window.setTimeout(
+              () =>
+                setAnimation((current) =>
+                  transition(current, "idle", performance.now()),
+                ),
+              1200,
+            ),
+          );
+        }, 300),
+      );
+    }
     input.current?.focus();
   }
   return (
@@ -212,24 +266,49 @@ export default function App() {
         if (e.key === "Escape") setOpen(false);
       }}
       className={
-        open ? `stage expanded${managing ? " managing" : ""}` : "stage"
+        open
+          ? `stage expanded${managing || settingUp ? " managing" : ""}`
+          : "stage"
       }
     >
       {open && (
         <section ref={bubble} className="bubble" aria-label="DigiPet chat">
           <header>
             <span>
-              DigiPet <small>M1</small>
+              DigiPet <small>M2</small>
             </span>
             <button aria-label="Close chat" onClick={() => setOpen(false)}>
               ×
             </button>
           </header>
           <div className="actions">
-            <button onClick={() => setManaging((value) => !value)}>
+            <button
+              onClick={() => {
+                setSettingUp(false);
+                setManaging((value) => !value);
+              }}
+            >
               {managing ? "Chat / 聊天" : "Appearance / 外觀"}
             </button>
+            <button
+              disabled={busy}
+              onClick={() => {
+                setManaging(false);
+                setSettingUp((value) => !value);
+              }}
+            >
+              Settings / 設定
+            </button>
           </div>
+          {settingUp && (
+            <ApiSettings
+              settings={settings}
+              done={(next) => {
+                setSettings(next);
+                setSettingUp(false);
+              }}
+            />
+          )}
           <label className="state-control">
             狀態 / State
             <select
@@ -260,10 +339,15 @@ export default function App() {
               maxLength={500}
               onChange={(e) => setText(e.target.value)}
             />
-            <button type="submit" aria-label="Send message">
+            <button
+              disabled={busy || settingUp}
+              type="submit"
+              aria-label="Send message"
+            >
               ↑
             </button>
           </form>
+          {busy && <button onClick={stop}>Stop / 停止</button>}
           {error && (
             <p className="error" role="alert">
               {error}

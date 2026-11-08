@@ -1,3 +1,4 @@
+mod api;
 use serde::Deserialize;
 use std::{
     sync::Mutex,
@@ -281,6 +282,7 @@ fn warn(app: &tauri::AppHandle, error: impl std::fmt::Display) {
 
 pub fn run() {
     tauri::Builder::default()
+        .manage(api::Requests::default())
         .manage(Mutex::new(Interaction {
             enabled: !is_wayland(),
             ignoring: false,
@@ -291,7 +293,11 @@ pub fn run() {
             set_hit_regions,
             begin_pet_gesture,
             cancel_pet_gesture,
-            resize_pet
+            resize_pet,
+            api::save_api_credential,
+            api::remove_api_credential,
+            api::api_reply,
+            api::stop_api_reply
         ])
         .setup(|app| {
             // Initialize shortcuts separately so an unsupported compositor cannot
