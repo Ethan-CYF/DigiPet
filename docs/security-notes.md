@@ -26,7 +26,8 @@ WebView runtime is outside this boundary; this is not an OS sandbox.
   context; fallback requires an explicit setting. Audit logs contain fixed codes,
   never input or provider bodies. History export uses an explicit field allowlist,
   redacts each text field with the configured keychain credentials **before JSON
-  escaping**, then applies common credential-pattern redaction. Arbitrary unknown
+  escaping** (the export-specific native command accepts bounded whole fields up to
+  8 MiB, including large UTF-8 conversations), then applies common credential-pattern redaction. Arbitrary unknown
   secrets in user prose cannot be identified reliably; review exports before sharing.
 
 ## Recovery and persistence

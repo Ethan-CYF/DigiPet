@@ -310,6 +310,7 @@ pub fn run() {
             api::save_api_credential,
             api::remove_api_credential,
             api::redact_chat_text,
+            api::redact_export_text,
             api::api_reply,
             api::stop_api_reply,
             api::api_tool_turn,

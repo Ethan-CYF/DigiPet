@@ -29,7 +29,7 @@ A short heap delta includes normal allocation and is not evidence of a leak.
 
 The liveness assertion only requires continued drawing during pending work;
 there is no invented fixed FPS/CPU pass threshold. Tauri tool IO/search and folder
-selection run in blocking workers. The animation effect now retains its state
+selection run in blocking workers. The animation effect retains its state
 when repeated streaming updates request the same state, avoiding repeated image
 decode/timer recreation. Effect teardown clears timers, subscriptions and pending
 requests; download URLs are revoked after use. Rerun the measurement if changing

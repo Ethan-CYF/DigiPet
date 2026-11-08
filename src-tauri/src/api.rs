@@ -87,7 +87,22 @@ pub async fn redact_chat_text(
     text: String,
     credential_refs: Vec<String>,
 ) -> Result<String, String> {
-    if text.len() > 16000 || credential_refs.len() > 8 {
+    redact_bounded(text, credential_refs, 16000).await
+}
+/// History exports redact whole fields before JSON escaping; never split a secret at chunk boundaries.
+#[tauri::command]
+pub async fn redact_export_text(
+    text: String,
+    credential_refs: Vec<String>,
+) -> Result<String, String> {
+    redact_bounded(text, credential_refs, 8 * 1024 * 1024).await
+}
+async fn redact_bounded(
+    text: String,
+    credential_refs: Vec<String>,
+    limit: usize,
+) -> Result<String, String> {
+    if text.len() > limit || credential_refs.len() > 8 {
         return Err("Invalid message".into());
     }
     tauri::async_runtime::spawn_blocking(move || {
@@ -937,4 +952,24 @@ pub async fn api_tool_turn(
         active.remove(&request_id);
     }
     result
+}
+
+#[cfg(test)]
+mod export_tests {
+    #[tokio::test]
+    async fn export_redaction_accepts_large_utf8_fields_without_relaxing_chat_limits() {
+        let text = "歷史🦀".repeat(8000);
+        assert!(super::redact_chat_text(text.clone(), vec![]).await.is_err());
+        assert_eq!(
+            super::redact_export_text(text.clone(), vec![])
+                .await
+                .unwrap(),
+            text
+        );
+        assert!(
+            super::redact_export_text("x".repeat(8 * 1024 * 1024 + 1), vec![])
+                .await
+                .is_err()
+        );
+    }
 }

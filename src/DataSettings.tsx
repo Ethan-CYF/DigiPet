@@ -39,7 +39,7 @@ export default function DataSettings({
               await history.list(),
               (text) =>
                 isTauri()
-                  ? invoke<string>("redact_chat_text", {
+                  ? invoke<string>("redact_export_text", {
                       text,
                       credentialRefs: providerRoutes(settings).map(
                         (p) => p.route.credentialRef,

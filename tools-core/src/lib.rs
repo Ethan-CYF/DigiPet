@@ -363,6 +363,12 @@ impl Engine {
             return err();
         }
         let previous = self.saved.grants.clone();
+        let previous_roots = self
+            .roots
+            .iter()
+            .map(|(key, dir)| dir.try_clone().map(|copy| (key.clone(), copy)))
+            .collect::<std::io::Result<BTreeMap<_, _>>>()
+            .map_err(|_| "Folder state unavailable")?;
         self.pending.clear();
         if enabled {
             if let Some(folder) = folder {
@@ -390,6 +396,7 @@ impl Engine {
         let result = self.audit(tool, "grant_changed").and_then(|_| self.save());
         if result.is_err() {
             self.saved.grants = previous;
+            self.roots = previous_roots;
         }
         result
     }
@@ -399,6 +406,12 @@ impl Engine {
             return err();
         }
         let previous = self.saved.grants.clone();
+        let previous_roots = self
+            .roots
+            .iter()
+            .map(|(key, dir)| dir.try_clone().map(|copy| (key.clone(), copy)))
+            .collect::<std::io::Result<BTreeMap<_, _>>>()
+            .map_err(|_| "Folder state unavailable")?;
         self.pending.clear();
         if let Some(folders) = self.saved.grants.folders.get_mut(tool) {
             folders.remove(&folder);
@@ -407,6 +420,7 @@ impl Engine {
         let result = self.audit(tool, "folder_revoked").and_then(|_| self.save());
         if result.is_err() {
             self.saved.grants = previous;
+            self.roots = previous_roots;
         }
         result
     }
@@ -949,6 +963,33 @@ mod tests {
         );
         assert!(result.to_string().contains("public.txt"));
         assert!(!result.to_string().contains("private.txt"));
+    }
+    #[test]
+    fn failed_revocation_restores_permissions_and_live_folder_handles() {
+        let mut f = fixture();
+        grant(&mut f, "coding");
+        let file = f.root.join("source.txt");
+        fs::write(&file, "healthy").unwrap();
+        for folder_only in [false, true] {
+            let audit = f.engine.dir.join("audit-v1.log");
+            fs::remove_file(&audit).unwrap();
+            fs::create_dir(&audit).unwrap(); // Deterministic storage failure on Windows and Linux.
+            let failed = if folder_only {
+                f.engine
+                    .revoke_folder("coding", fs::canonicalize(&f.root).unwrap())
+            } else {
+                f.engine.grant("coding", false, None)
+            };
+            assert!(failed.is_err());
+            fs::remove_dir(&audit).unwrap();
+            assert!(f.engine.grants().tools.contains("coding"));
+            let read = call(
+                &mut f.engine,
+                "coding",
+                json!({"action":"read","path":file}),
+            );
+            assert_eq!(read["untrusted_data"], "healthy");
+        }
     }
     #[test]
     fn audit_never_contains_tool_input_secrets() {
