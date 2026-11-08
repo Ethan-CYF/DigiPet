@@ -98,6 +98,28 @@ describe("bounded model ↔ tools loop", () => {
       expect(progress).toHaveBeenCalled();
     },
   );
+  it("provides authoritative user-selected roots to the model without granting new access", async () => {
+    const tools = fakeBackend();
+    tools.grants = async () => ({
+      tools: ["coding"],
+      folders: { coding: ["allowed/project"] },
+    });
+    let observed: ChatMessage[] = [];
+    await runTask(
+      [],
+      async (messages) => {
+        observed = [...messages];
+        return done;
+      },
+      tools,
+      signal(),
+      () => {},
+      async () => false,
+    );
+    expect(observed[1].content).toContain("allowed/project");
+    expect(observed[1].content).toContain("never authorize a write");
+    expect(tools.run).not.toHaveBeenCalled();
+  });
   it("reject leaves the model a rejected result without exposing preview token", async () => {
     const tools = fakeBackend(true);
     const replies = [call("report", { action: "export" }), done];

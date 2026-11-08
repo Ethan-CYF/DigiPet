@@ -48,6 +48,7 @@ async function fixture(tool: ToolName) {
   }
   await request({ op: "grant", tool });
   const backend: ToolBackend = {
+    grants: () => request({ op: "grants" }),
     run: (tool, args) => request({ op: "run", tool, args }),
     confirm: (token, approved) => request({ op: "confirm", token, approved }),
     cancel: () => request({ op: "cancel" }),
@@ -93,6 +94,8 @@ async function run(
     },
   );
   expect(result).toBe("Task completed");
+  expect(observed[1].content).toContain("user-selected folder roots");
+  expect(observed[1].content).toContain(tool);
   return { observed, previews };
 }
 describe("mock model ↔ orchestrator ↔ real Rust tool boundary", () => {

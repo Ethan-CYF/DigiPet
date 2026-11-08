@@ -18,6 +18,7 @@ fn main() {
                 Some("grant") => engine
                     .grant(tool, true, Some(root.join("project")))
                     .map(|_| json!({})),
+                Some("grants") => Ok(json!(engine.grants())),
                 Some("run") => engine.run(tool, v["args"].clone()),
                 Some("confirm") => engine.confirm(
                     v["token"].as_str().unwrap_or(""),

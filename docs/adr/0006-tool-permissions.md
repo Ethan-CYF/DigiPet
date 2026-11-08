@@ -10,7 +10,7 @@ model tools. The frontend only renders tool output as text.
 
 Permissions start empty. Each tool must be enabled independently. File operations also
 need a folder selected in the native picker for that tool. A grant permits reads and
-write proposals; it never approves a write. Settings can revoke a tool and all its folders.
+write proposals; it never approves a write. Settings can revoke individual folders or a tool and all its folders.
 Revocation and cancellation invalidate outstanding previews. Persisted grants restore on
 restart; open directory capabilities are reacquired only for valid roots.
 
@@ -34,7 +34,9 @@ while confirming a patch. M4 patches are whole-file replacement previews, not sh
 The orchestrator counts model turns and tool calls toward 12 steps (hard maximum 24),
 supports Stop during generation and approval, and clears previews on completion. Tool turns
 use the M3 router's opted-in routes, bounded timeout/retries and explicit fallback policy;
-non-streaming OpenAI-compatible function calls preserve `tool_call_id`. Tool results use
+non-streaming OpenAI-compatible function calls preserve `tool_call_id`. The model receives
+a read-only snapshot of enabled tools and user-selected roots so it can form valid paths;
+only Rust grants are authoritative. Tool results use
 `role: tool` and an untrusted-data envelope. A system instruction rejects embedded
 instructions; backend permission checks and human confirmations enforce this regardless
 of model behavior. Configured API keys are redacted at the keychain boundary. No paid calls

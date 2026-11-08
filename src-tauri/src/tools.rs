@@ -98,3 +98,13 @@ pub fn tool_reminders(
         )))
     })
 }
+
+#[tauri::command]
+pub fn tool_revoke_folder(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, Tools>,
+    tool: String,
+    folder: String,
+) -> Result<(), String> {
+    engine(&app, &state, |e| e.revoke_folder(&tool, folder.into()))
+}

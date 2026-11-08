@@ -28,6 +28,8 @@ test("mock native tools display exact write preview, require confirmation, and S
         invoke: async (command: string, args: Record<string, any>) => {
           if (command === "redact_chat_text") return args.text;
           if (command === "tool_reminders") return [];
+          if (command === "tool_grants")
+            return { tools: ["report"], folders: { report: ["allowed"] } };
           if (command === "api_tool_turn") {
             args.onUpdate.onmessage({ ready: true });
             return ++turn % 2

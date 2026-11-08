@@ -51,7 +51,25 @@ export default function ToolPermissions() {
             Choose allowed folder / 選擇允許資料夾
           </button>
           {(grants.folders[tool] ?? []).map((folder) => (
-            <p key={folder}>{folder}</p>
+            <p key={folder}>
+              {folder}
+              <button
+                disabled={busy}
+                onClick={() => {
+                  setBusy(true);
+                  setError("");
+                  void invoke("tool_revoke_folder", { tool, folder })
+                    .then(() => invoke<Grants>("tool_grants"))
+                    .then(setGrants)
+                    .catch(() =>
+                      setError("Could not revoke folder / 無法撤銷資料夾"),
+                    )
+                    .finally(() => setBusy(false));
+                }}
+              >
+                Revoke folder / 撤銷資料夾
+              </button>
+            </p>
           ))}
           {grants.tools.includes(tool) && (
             <button

@@ -309,6 +309,23 @@ impl Engine {
         }
         result
     }
+    /// UI-only revocation of one exact persisted folder grant, even when it no longer exists.
+    pub fn revoke_folder(&mut self, tool: &str, folder: PathBuf) -> Result<()> {
+        if !NAMES.contains(&tool) {
+            return err();
+        }
+        self.pending.clear();
+        if let Some(folders) = self.saved.grants.folders.get_mut(tool) {
+            folders.remove(&folder);
+        }
+        self.roots.remove(&(tool.into(), folder));
+        let result = self.audit(tool, "folder_revoked").and_then(|_| self.save());
+        if result.is_err() {
+            self.saved.grants = Grants::default();
+            self.roots.clear();
+        }
+        result
+    }
     fn path(&self, name: &str, raw: &str) -> Result<PathBuf> {
         let path = canonical(Path::new(raw))?;
         // Application storage (permissions, audit and records) is never a file-tool target.
@@ -1101,6 +1118,31 @@ mod tests {
             .confirm(v["preview"]["token"].as_str().unwrap(), true)
             .is_err());
         assert!(!path.exists());
+    }
+    #[test]
+    fn revoking_one_folder_preserves_other_grants_and_expires_previews() {
+        let mut f = fixture();
+        grant(&mut f, "report");
+        let other = f._dir.path().join("second-project");
+        fs::create_dir(&other).unwrap();
+        f.engine.grant("report", true, Some(other.clone())).unwrap();
+        let args = json!({"action":"export","path":f.root.join("report.md"),"title":"Title","text":"Body"});
+        let pending = call(&mut f.engine, "report", args.clone());
+        f.engine
+            .revoke_folder("report", fs::canonicalize(&f.root).unwrap())
+            .unwrap();
+        assert!(f
+            .engine
+            .confirm(pending["preview"]["token"].as_str().unwrap(), true)
+            .is_err());
+        assert!(f.engine.run("report", args).is_err());
+        let pending = call(
+            &mut f.engine,
+            "report",
+            json!({"action":"export","path":other.join("report.md"),"title":"Title","text":"Body"}),
+        );
+        confirm(&mut f.engine, &pending);
+        assert!(other.join("report.md").exists());
     }
     #[test]
     fn file_tools_cannot_edit_or_read_the_permission_database() {

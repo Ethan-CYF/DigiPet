@@ -103,7 +103,7 @@ Linux 會產生 `.deb` 與 `.AppImage`；Windows 會產生 NSIS 安裝程式，�
 
 **每次資料寫入都先顯示完整 Before / After 預覽，按 Confirm write / 確認寫入後才寫入**，
 包含事件、日記、ICS 匯入與檔案匯出。拒絕或停止不寫入；確認前會重驗路徑、權限與原內容，
-若檔案改變須重新提出預覽。在設定撤銷工具會連同資料夾與待確認預覽一併撤銷。
+若檔案改變須重新提出預覽。可在設定撤銷單一資料夾；撤銷工具會連同所有資料夾與待確認預覽一併撤銷。
 阻擋 `..`、symlink／Windows reparse point、系統及隱藏憑證路徑；工具內容不能授權或確認。
 
 事件、日記與授權存於應用程式 local data 的 `tools/tools-v1.json`。稽核
@@ -234,7 +234,7 @@ both model turns and tool calls. Ungranted tools and paths are denied.
 **Every tool-data write requires the complete Before/After preview and an explicit Confirm write**,
 including calendar/journal mutations, ICS imports and file exports. Reject or Stop leaves data
 unchanged. Confirmation rechecks permissions, paths and original contents; changed files require
-a fresh proposal. Revoking a tool in Settings also revokes its folders and pending previews.
+a fresh proposal. Settings can revoke individual folders; revoking a tool also revokes all its folders and pending previews.
 Traversal, symlinks/Windows reparse points, system and hidden credential paths are rejected.
 Tool output is untrusted data and cannot grant permissions or confirm a write.
 
