@@ -50,7 +50,11 @@ jobs:
           pnpm test:browser
       - run: cargo check --locked --manifest-path src-tauri/Cargo.toml
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
-      - name: Build unsigned installers
+      # M4 verifies native binaries without release-only NSIS/AppRun downloads.
+      - name: Build native application
+        run: pnpm tauri build --no-bundle
+      - name: Build unsigned installers (manual only)
+        if: github.event_name == 'workflow_dispatch'
         shell: bash
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
@@ -75,6 +79,7 @@ jobs:
           cat native-smoke.log
           test "$result" -eq 124
       - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch'
         with:
           name: DigiPet-${{ runner.os }}-unsigned
           path: |

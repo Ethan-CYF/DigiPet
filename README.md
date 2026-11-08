@@ -111,6 +111,7 @@ Linux 會產生 `.deb` 與 `.AppImage`；Windows 會產生 NSIS 安裝程式，�
 驗證指令：`cargo test --locked --manifest-path tools-core/Cargo.toml`、`pnpm test:tools`
 （mock model → orchestrator → 真正 Rust 工具，無真實 API）、`pnpm test`、`pnpm test:browser`。
 Windows 與 Linux CI 執行相同核心與端到端測試，Linux 固定 `ubuntu-24.04`。
+Push／PR CI 建置原生程式並測試；安裝包僅在手動 `workflow_dispatch` 建置，避免 NSIS／AppRun 外部下載影響工具驗收。
 權限模型見 [ADR 0006](docs/adr/0006-tool-permissions.md)。
 
 ### 路線圖（後續列為規劃）
@@ -243,7 +244,9 @@ Events, journals and grants live in application local data `tools/tools-v1.json`
 never contents, paths or keys. Run `cargo test --locked --manifest-path tools-core/Cargo.toml`,
 `pnpm test:tools` (mock model → orchestrator → real Rust tools, no live API), `pnpm test`, and
 `pnpm test:browser`. Windows and Linux CI run the same core and end-to-end checks; Linux stays
-pinned to `ubuntu-24.04`. See [ADR 0006](docs/adr/0006-tool-permissions.md).
+pinned to `ubuntu-24.04`. Push/PR CI builds and tests native binaries; installer bundles run
+only on manual `workflow_dispatch`, keeping external NSIS/AppRun downloads out of tool acceptance.
+See [ADR 0006](docs/adr/0006-tool-permissions.md).
 
 ### Roadmap (later milestones planned)
 
