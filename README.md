@@ -111,7 +111,7 @@ Linux 會產生 `.deb` 與 `.AppImage`；Windows 會產生 NSIS 安裝程式，�
 驗證指令：`cargo test --locked --manifest-path tools-core/Cargo.toml`、`pnpm test:tools`
 （mock model → orchestrator → 真正 Rust 工具，無真實 API）、`pnpm test`、`pnpm test:browser`。
 Windows 與 Linux CI 執行相同核心與端到端測試，Linux 固定 `ubuntu-24.04`。
-Push／PR CI 建置原生程式並測試；安裝包僅在手動 `workflow_dispatch` 建置，避免 NSIS／AppRun 外部下載影響工具驗收。
+M6 直接擴充相同 CI，於 push／PR、手動 workflow_dispatch 及已存在的 tag 事件建置安裝包及執行 smoke。
 權限模型見 [ADR 0006](docs/adr/0006-tool-permissions.md)。
 
 ### M5 產品整合與安全加固
@@ -136,6 +136,18 @@ CI 執行 Windows 與 ubuntu-24.04；Linux 保留效能環境與實測 JSON arti
 詳見 [安全摘要](docs/security-notes.md) 與 [效能量測](docs/performance.md)。
 測試只使用 mock 供應商與 fixtures，無真實 API keys／付費呼叫。
 
+### M6 未簽署發行流程
+
+**Unsigned / Unverified Publisher — 未簽署／未驗證發行者。** Windows x64 產出
+`DigiPet-Setup-windows-x64.exe`，Linux x64 於 ubuntu-24.04 產出 AppImage 及 `.deb`。
+既有 CI 重新下載校驗每個安裝包及 `SHA256SUMS`，並以 CI 測試資料執行安裝／視窗啟動／移除。
+手動執行僅產出 artifacts；已存在的 tag 事件只可建立／更新 Draft，絕不公開發佈。
+版本保持 `0.1.0`，沒有建立 tag、簽署或自動安裝更新。
+程式每次啟動只查詢一次已公開正式版本，以 SemVer 比較並提示手動下載；失敗／離線保持安靜。
+
+[安裝、SHA-256 及移除](docs/install.md) · [已知問題](docs/known-issues.md) ·
+[流程及測試限制](docs/release-pipeline.md) · [雙語 release notes 範本](docs/release-notes-template.md)。
+
 ### 路線圖（後續列為規劃）
 
 | 里程碑 | 範圍 |
@@ -145,8 +157,8 @@ CI 執行 Windows 與 ubuntu-24.04；Linux 保留效能環境與實測 JSON arti
 | M2（完成） | API 設定精靈、雲端同意、OS 金鑰庫憑證與可停止的單則 API 聊天；不下載模型 |
 | M3 | AI 對話與 Provider Router：SSE、停止、多路由、逐供應商同意、明確 fallback、本機歷史、context 與角色提示 |
 | M4（完成） | 五種 AI 工具與權限：schema、orchestrator、逐工具／資料夾授權、寫入預覽確認與本機稽核 |
-| M5（本次） | 產品整合與安全加固：整合設定、實際舊格式遷移、備份復原、離線本機功能、圖片／權限測試與效能基準 |
-| M6 | Windows／Linux 相容性、效能、無障礙、簽章與 release pipeline |
+| M5（完成） | 產品整合與安全加固：整合設定、實際舊格式遷移、備份復原、離線本機功能、圖片／權限測試與效能基準 |
+| M6（本次） | Windows x64 NSIS、Linux x64 AppImage／deb、未簽署 release pipeline、SHA-256、安裝 smoke、手動更新提示 |
 | M7 | 穩定版本、文件、發行與社群貢獻流程 |
 
 架構決策：[0001-stack](docs/adr/0001-stack.md)、[0002-click-through](docs/adr/0002-click-through.md)、[0003-appearance](docs/adr/0003-appearance.md)、[0004-api-credentials](docs/adr/0004-api-credentials.md)、[0005-chat-router-history](docs/adr/0005-chat-router-history.md)。原有 [MIT LICENSE](LICENSE) 保留不變。
@@ -266,8 +278,7 @@ Events, journals and grants live in application local data `tools/tools-v1.json`
 never contents, paths or keys. Run `cargo test --locked --manifest-path tools-core/Cargo.toml`,
 `pnpm test:tools` (mock model → orchestrator → real Rust tools, no live API), `pnpm test`, and
 `pnpm test:browser`. Windows and Linux CI run the same core and end-to-end checks; Linux stays
-pinned to `ubuntu-24.04`. Push/PR CI builds and tests native binaries; installer bundles run
-only on manual `workflow_dispatch`, keeping external NSIS/AppRun downloads out of tool acceptance.
+pinned to `ubuntu-24.04`. Push/PR CI builds and tests native binaries; M6 extends this same workflow to build installer bundles on branch/PR, manual and existing tag events.
 See [ADR 0006](docs/adr/0006-tool-permissions.md).
 
 ### M5 integration and security hardening
@@ -294,7 +305,21 @@ Run `pnpm test`, `pnpm test:tools`, `pnpm test:browser`, `pnpm test:perf` and
 ubuntu-24.04 CI verify integration; Linux uploads measured performance/environment
 JSON artifacts. See [security notes](docs/security-notes.md) and
 [performance measurements](docs/performance.md). Mock providers/fixtures only:
-no real API keys or paid calls. Release publishing/signing remains M6.
+no real API keys or paid calls. M6 unsigned packaging and manual updates are described below; publishing/signing is not part of M6.
+
+### M6 unsigned release pipeline
+
+**Unsigned / Unverified Publisher.** Windows x64 produces `DigiPet-Setup-windows-x64.exe`;
+Linux x64 produces both AppImage and `.deb` on ubuntu-24.04. The existing CI workflow
+re-downloads installers and verifies `SHA256SUMS`, then uses disposable CI data for
+install/native-window/uninstall smoke checks. Manual runs upload artifacts only;
+existing tag events may create/reuse a Draft, never publish. Version remains `0.1.0`;
+this work creates no tag, signing or automatic update installation. At startup the app
+checks published stable GitHub release metadata once, compares SemVer and offers a
+manual download link; no release/offline/errors are silent.
+
+[Install, verify and uninstall](docs/install.md) · [Known issues](docs/known-issues.md) ·
+[Pipeline and test limits](docs/release-pipeline.md) · [Bilingual release notes template](docs/release-notes-template.md).
 
 ### Roadmap (later milestones planned)
 
@@ -305,8 +330,8 @@ no real API keys or paid calls. Release publishing/signing remains M6.
 | M2 (done) | API setup wizard, cloud consent, OS keychain credentials and cancellable single-message API chat; no model downloads |
 | M3 | AI chat and provider router: SSE, Stop, multiple routes, per-provider consent, explicit fallback, local history, context and persona |
 | M4 (done) | AI tools & permissions: five tools, schemas, orchestrator, tool/folder grants, write previews/confirmation and local audit |
-| M5 (this change) | Integration & security hardening: consolidated settings, actual-format migrations, backup/recovery, offline local tools, image/permission tests and measured performance |
-| M6 | Windows/Linux compatibility, performance, accessibility, signing and release pipeline |
+| M5 (done) | Integration & security hardening: consolidated settings, actual-format migrations, backup/recovery, offline local tools, image/permission tests and measured performance |
+| M6 (this change) | Unsigned Windows x64 NSIS + Linux x64 AppImage/deb pipeline, SHA-256, installer smoke and manual update notices |
 | M7 | Stable release, docs, distribution and contribution workflow |
 
 See [ADR 0001](docs/adr/0001-stack.md) and [ADR 0002](docs/adr/0002-click-through.md), and [ADR 0003](docs/adr/0003-appearance.md), and [ADR 0004](docs/adr/0004-api-credentials.md), and [ADR 0005](docs/adr/0005-chat-router-history.md). The existing [MIT LICENSE](LICENSE) is unchanged.
