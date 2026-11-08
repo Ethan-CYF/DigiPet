@@ -111,7 +111,18 @@ fn denied_component(path: &Path) -> bool {
         Component::ParentDir => true,
         Component::Normal(s) => {
             let s = s.to_string_lossy().to_lowercase();
-            s.starts_with('.')
+            let stem = s.split('.').next().unwrap_or("").trim_end();
+            let device = matches!(stem, "con" | "prn" | "aux" | "nul" | "conin$" | "conout$")
+                || ["com", "lpt"].iter().any(|prefix| {
+                    stem.strip_prefix(prefix).is_some_and(|n| {
+                        matches!(
+                            n,
+                            "1" | "2" | "3" | "4" | "5" | "6" | "7" | "8" | "9" | "¹" | "²" | "³"
+                        )
+                    })
+                });
+            device
+                || s.starts_with('.')
                 || s.contains(':')
                 || s.ends_with('.')
                 || s.ends_with(' ')
@@ -818,6 +829,9 @@ mod tests {
             "credentials.json",
             "secret.pem",
             "file.txt:stream",
+            "NUL.txt",
+            "CON",
+            "COM1",
             "trailing.",
         ] {
             assert!(

@@ -746,6 +746,22 @@ mod tests {
         assert_eq!(result.unwrap_err(), "Request stopped");
         server.join().unwrap();
     }
+    #[test]
+    fn tool_json_redaction_handles_escaped_credentials_in_arguments() {
+        let key = "unit-\"fixture\\value";
+        let args = serde_json::json!({"action":"patch","text":key}).to_string();
+        let mut value =
+            serde_json::json!({"content":key,"tool_calls":[{"function":{"arguments":args}}]});
+        scrub_tool_value(&mut value, key);
+        assert_eq!(value["content"], "[REDACTED]");
+        let args: serde_json::Value = serde_json::from_str(
+            value["tool_calls"][0]["function"]["arguments"]
+                .as_str()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(args["text"], "[REDACTED]");
+    }
     #[tokio::test]
     async fn function_call_transport_sends_registry_and_preserves_tool_roles() {
         let body = r#"{"choices":[{"message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"calendar","arguments":"{\"action\":\"list\"}"}}]}}]}"#;
@@ -775,6 +791,42 @@ mod tests {
     }
 }
 
+// Scrub decoded JSON strings, including JSON-escaped text inside function arguments.
+fn scrub_tool_value(value: &mut serde_json::Value, key: &str) {
+    if key.is_empty() {
+        return;
+    }
+    let encoded = serde_json::to_string(key).unwrap_or_default();
+    let escaped = encoded
+        .get(1..encoded.len().saturating_sub(1))
+        .unwrap_or(key);
+    fn visit(value: &mut serde_json::Value, key: &str, escaped: &str) {
+        match value {
+            serde_json::Value::String(text) => {
+                *text = text
+                    .replace(escaped, "[REDACTED]")
+                    .replace(key, "[REDACTED]")
+            }
+            serde_json::Value::Array(values) => {
+                values.iter_mut().for_each(|v| visit(v, key, escaped))
+            }
+            serde_json::Value::Object(fields) => {
+                let old = std::mem::take(fields);
+                for (name, mut value) in old {
+                    visit(&mut value, key, escaped);
+                    fields.insert(
+                        name.replace(escaped, "[REDACTED]")
+                            .replace(key, "[REDACTED]"),
+                        value,
+                    );
+                }
+            }
+            _ => {}
+        }
+    }
+    visit(value, key, escaped);
+}
+
 async fn complete_tool_messages(
     client: &reqwest::Client,
     route: &Route,
@@ -782,11 +834,8 @@ async fn complete_tool_messages(
     messages: &[serde_json::Value],
 ) -> Result<serde_json::Value, String> {
     let grants = digipet_tools::registry();
-    let clean_messages = serde_json::to_string(&messages)
-        .map_err(|_| "Invalid context")?
-        .replace(key, "[REDACTED]");
-    let messages: serde_json::Value =
-        serde_json::from_str(&clean_messages).map_err(|_| "Invalid context")?;
+    let mut messages = serde_json::json!(messages);
+    scrub_tool_value(&mut messages, key);
     let mut response = client.post(format!("{}/chat/completions",route.base_url.trim_end_matches('/'))).bearer_auth(key)
             .json(&serde_json::json!({"model":route.model,"messages":messages,"tools":grants,"tool_choice":"auto","stream":false})).send().await.map_err(|_| "API connection failed")?;
     if !response.status().is_success() {
@@ -799,13 +848,9 @@ async fn complete_tool_messages(
         }
         bytes.extend_from_slice(&chunk);
     }
-    let clean = safe_output(
-        std::str::from_utf8(&bytes).map_err(|_| "Invalid API response")?,
-        key,
-        true,
-    );
-    let value: serde_json::Value =
-        serde_json::from_str(&clean).map_err(|_| "Invalid API response")?;
+    let mut value: serde_json::Value =
+        serde_json::from_slice(&bytes).map_err(|_| "Invalid API response")?;
+    scrub_tool_value(&mut value, key);
     let reply = value
         .pointer("/choices/0/message")
         .ok_or("Missing API reply")?
