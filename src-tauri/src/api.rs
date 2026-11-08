@@ -746,4 +746,150 @@ mod tests {
         assert_eq!(result.unwrap_err(), "Request stopped");
         server.join().unwrap();
     }
+    #[tokio::test]
+    async fn function_call_transport_sends_registry_and_preserves_tool_roles() {
+        let body = r#"{"choices":[{"message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"calendar","arguments":"{\"action\":\"list\"}"}}]}}]}"#;
+        let (base_url, server) = mock_server("200 OK", body);
+        let route = Route {
+            kind: "openai-compatible".into(),
+            base_url,
+            model: "fixture-model".into(),
+            credential_ref: uuid::Uuid::new_v4().to_string(),
+        };
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let messages = vec![
+            serde_json::json!({"role":"tool","tool_call_id":"previous","content":"fixture-private"}),
+        ];
+        let reply = complete_tool_messages(&client, &route, "fixture-private", &messages)
+            .await
+            .unwrap();
+        assert_eq!(reply["tool_calls"][0]["function"]["name"], "calendar");
+        let request = server.join().unwrap();
+        let payload: serde_json::Value =
+            serde_json::from_str(request.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(payload["tools"], digipet_tools::registry());
+        assert_eq!(payload["stream"], false);
+        assert_eq!(payload["messages"][0]["role"], "tool");
+        assert_eq!(payload["messages"][0]["tool_call_id"], "previous");
+        assert_eq!(payload["messages"][0]["content"], "[REDACTED]");
+    }
+}
+
+async fn complete_tool_messages(
+    client: &reqwest::Client,
+    route: &Route,
+    key: &str,
+    messages: &[serde_json::Value],
+) -> Result<serde_json::Value, String> {
+    let grants = digipet_tools::registry();
+    let clean_messages = serde_json::to_string(&messages)
+        .map_err(|_| "Invalid context")?
+        .replace(key, "[REDACTED]");
+    let messages: serde_json::Value =
+        serde_json::from_str(&clean_messages).map_err(|_| "Invalid context")?;
+    let mut response = client.post(format!("{}/chat/completions",route.base_url.trim_end_matches('/'))).bearer_auth(key)
+            .json(&serde_json::json!({"model":route.model,"messages":messages,"tools":grants,"tool_choice":"auto","stream":false})).send().await.map_err(|_| "API connection failed")?;
+    if !response.status().is_success() {
+        return Err(format!("API HTTP {}", response.status().as_u16()));
+    }
+    let mut bytes = vec![];
+    while let Some(chunk) = response.chunk().await.map_err(|_| "API response failed")? {
+        if bytes.len() + chunk.len() > 1024 * 1024 {
+            return Err("API response too large".into());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let clean = safe_output(
+        std::str::from_utf8(&bytes).map_err(|_| "Invalid API response")?,
+        key,
+        true,
+    );
+    let value: serde_json::Value =
+        serde_json::from_str(&clean).map_err(|_| "Invalid API response")?;
+    let reply = value
+        .pointer("/choices/0/message")
+        .ok_or("Missing API reply")?
+        .clone();
+    if reply["role"] != "assistant" {
+        return Err("Invalid API response".into());
+    }
+    Ok(reply)
+}
+
+/// Tool turns use the same endpoint/keychain binding, cancellation and limits as M3.
+/// No model-supplied tool definitions, permission changes or confirmations are accepted.
+#[tauri::command]
+pub async fn api_tool_turn(
+    request_id: String,
+    route: Route,
+    consent: bool,
+    messages: Vec<serde_json::Value>,
+    timeout_ms: u64,
+    on_update: tauri::ipc::Channel<Update>,
+    requests: tauri::State<'_, Requests>,
+) -> Result<serde_json::Value, String> {
+    if !consent || route.kind != "openai-compatible" {
+        return Err("Cloud consent required".into());
+    }
+    validate(&route.base_url, &route.model)?;
+    uuid::Uuid::parse_str(&request_id).map_err(|_| "Invalid request ID")?;
+    if messages.is_empty()
+        || messages.len() > 150
+        || serde_json::to_vec(&messages)
+            .map_err(|_| "Invalid context")?
+            .len()
+            > 2 * 1024 * 1024
+    {
+        return Err("Invalid context".into());
+    }
+    for m in &messages {
+        if !matches!(
+            m["role"].as_str(),
+            Some("system" | "user" | "assistant" | "tool")
+        ) {
+            return Err("Invalid context".into());
+        }
+    }
+    let (sender, receiver) = watch::channel(false);
+    {
+        let mut active = requests.0.lock().map_err(|_| "Request state unavailable")?;
+        if !active.is_empty() {
+            return Err("A request is already active".into());
+        }
+        active.insert(request_id.clone(), sender);
+    }
+    let _ = on_update.send(Update {
+        ready: true,
+        text: None,
+    });
+    let task = async {
+        let reference = route.credential_ref.clone();
+        let secret = tauri::async_runtime::spawn_blocking(move || {
+            entry(&reference)?
+                .get_password()
+                .map_err(|_| KEYCHAIN_ERROR.to_string())
+        })
+        .await
+        .map_err(|_| KEYCHAIN_ERROR)??;
+        let credential: Credential = serde_json::from_str(&secret).map_err(|_| KEYCHAIN_ERROR)?;
+        if credential.base_url != route.base_url || credential.model != route.model {
+            return Err("Credential route mismatch".into());
+        }
+        let client = reqwest::Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(Duration::from_millis(timeout_ms.clamp(1000, 120000)))
+            .build()
+            .map_err(|_| "API client unavailable")?;
+        complete_tool_messages(&client, &route, &credential.api_key, &messages).await
+    };
+    let result = tokio::time::timeout(
+        Duration::from_millis(timeout_ms.clamp(1000, 120000)),
+        cancellable(receiver, task),
+    )
+    .await
+    .unwrap_or_else(|_| Err("API timeout".into()));
+    if let Ok(mut active) = requests.0.lock() {
+        active.remove(&request_id);
+    }
+    result
 }

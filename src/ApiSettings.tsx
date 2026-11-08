@@ -1,3 +1,4 @@
+import ToolPermissions from "./ToolPermissions";
 import { useState, type FormEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
@@ -77,6 +78,7 @@ export default function ApiSettings({
   }
   return (
     <section className="api-settings" aria-label="API setup">
+      <ToolPermissions />
       {providerRoutes(draft).length > 0 && !adding && (
         <section aria-label="Provider router">
           <h2>Providers / 供應商</h2>

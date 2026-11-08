@@ -14,7 +14,9 @@ export interface ProviderRoute {
   consent: boolean;
 }
 export interface ChatMessage {
-  role: "user" | "assistant" | "system";
+  role: "user" | "assistant" | "system" | "tool";
+  tool_calls?: import("./tools").ToolCall[];
+  tool_call_id?: string;
   content: string;
 }
 export interface RouterPolicy {
@@ -137,7 +139,7 @@ export async function routedReply(
       try {
         return await transport(
           provider.route,
-          messages.map((m) => ({ role: m.role, content: redact(m.content) })),
+          messages.map((m) => ({ ...m, content: redact(m.content) })),
           signal,
           (value) => {
             output ||= value.length > 0;
