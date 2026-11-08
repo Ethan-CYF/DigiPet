@@ -231,3 +231,6 @@ button:disabled { opacity: .5; cursor: default; }
 .bubble [role=status] { white-space: pre-wrap; }
 .api-settings input[type=radio] { width: auto; }
 .bubble::after { pointer-events: none; }
+/* Tool output and previews are rendered only as text. */
+.bubble pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; font-size: 11px; }
+.bubble [role="dialog"] { border: 2px solid #7867bd; padding: 8px; }

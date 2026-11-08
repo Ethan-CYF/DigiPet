@@ -1,4 +1,10 @@
 import {
+  backend,
+  runTask,
+  routedToolModel,
+  type Preview,
+} from "./modules/tools";
+import {
   useEffect,
   useRef,
   useState,
@@ -29,6 +35,43 @@ import {
 import { redact, withAbort } from "./modules/redaction";
 export default function App() {
   const desktop = isTauri();
+  const [toolsEnabled, setToolsEnabled] = useState(false);
+  const [preview, setPreview] = useState<Preview | null>(null);
+  const approval = useRef<((approved: boolean) => void) | null>(null);
+  const [reminder, setReminder] = useState("");
+  function approveWrite(value: Preview, signal: AbortSignal): Promise<boolean> {
+    return new Promise((resolve) => {
+      const finish = (approved: boolean) => {
+        signal.removeEventListener("abort", abort);
+        approval.current = null;
+        setPreview(null);
+        resolve(approved);
+      };
+      const abort = () => finish(false);
+      approval.current = finish;
+      setPreview(value);
+      signal.addEventListener("abort", abort, { once: true });
+      if (signal.aborted) abort();
+    });
+  }
+  useEffect(() => {
+    if (!desktop) return;
+    const poll = () => {
+      void invoke<{ title: string; date: string }[]>("tool_reminders")
+        .then((events) => {
+          if (events.length) {
+            setReminder(
+              events.map((e) => `${e.title} (${e.date})`).join(" · "),
+            );
+            setOpen(true);
+          }
+        })
+        .catch(() => {});
+    };
+    poll();
+    const timer = window.setInterval(poll, 30000);
+    return () => window.clearInterval(timer);
+  }, [desktop]);
   const [settings, setSettings] = useState(loadSettings);
   const [settingUp, setSettingUp] = useState(!settings.completed);
   const [open, setOpen] = useState(!settings.completed);
@@ -179,7 +222,7 @@ export default function App() {
     void (async () => {
       await invoke("resize_pet", {
         expanded: open,
-        managing: open && (managing || settingUp),
+        managing: open && (managing || settingUp || toolsEnabled),
       });
       if (!disposed) await publish();
     })().catch((e) => setError(String(e)));
@@ -190,7 +233,7 @@ export default function App() {
       disposed = true;
       clearInterval(timer);
     };
-  }, [open, managing, settingUp]);
+  }, [open, managing, settingUp, toolsEnabled]);
 
   async function mouseDown(event: MouseEvent<HTMLButtonElement>) {
     if (event.button !== 0) return;
@@ -279,27 +322,47 @@ export default function App() {
           ],
         };
         await persist(next);
-        const result = await routedReply(
-          contextMessages(
-            next.messages,
-            settings.contextWindow,
-            settings.systemPrompt,
-          ),
-          {
-            routes: providerRoutes(settings),
-            activeRouteId: settings.activeRouteId,
-            fallbackEnabled: settings.fallbackEnabled,
-            timeoutMs: settings.timeoutMs,
-            retries: settings.retries,
-          },
-          controller.signal,
-          (value) => {
-            if (!value) return;
-            partial = value;
-            setReply(value);
-            changeState("talking");
-          },
-        );
+        const policy = {
+          routes: providerRoutes(settings),
+          activeRouteId: settings.activeRouteId,
+          fallbackEnabled: settings.fallbackEnabled,
+          timeoutMs: settings.timeoutMs,
+          retries: settings.retries,
+        };
+        const result = toolsEnabled
+          ? await runTask(
+              contextMessages(
+                next.messages,
+                settings.contextWindow,
+                settings.systemPrompt,
+              ),
+              routedToolModel(policy),
+              backend,
+              controller.signal,
+              (value) => setReply(value),
+              approveWrite,
+            )
+          : await routedReply(
+              contextMessages(
+                next.messages,
+                settings.contextWindow,
+                settings.systemPrompt,
+              ),
+              {
+                routes: providerRoutes(settings),
+                activeRouteId: settings.activeRouteId,
+                fallbackEnabled: settings.fallbackEnabled,
+                timeoutMs: settings.timeoutMs,
+                retries: settings.retries,
+              },
+              controller.signal,
+              (value) => {
+                if (!value) return;
+                partial = value;
+                setReply(value);
+                changeState("talking");
+              },
+            );
         partial = result;
         setReply(result);
         await persist({
@@ -362,7 +425,7 @@ export default function App() {
       }}
       className={
         open
-          ? `stage expanded${managing || settingUp ? " managing" : ""}`
+          ? `stage expanded${managing || settingUp || toolsEnabled ? " managing" : ""}`
           : "stage"
       }
     >
@@ -370,7 +433,7 @@ export default function App() {
         <section ref={bubble} className="bubble" aria-label="DigiPet chat">
           <header>
             <span>
-              DigiPet <small>M3</small>
+              DigiPet <small>M4</small>
             </span>
             <button aria-label="Close chat" onClick={() => setOpen(false)}>
               ×
@@ -499,6 +562,49 @@ export default function App() {
             </section>
           )}
           {historyError && <p className="error">{historyError}</p>}
+          {desktop && (
+            <label>
+              <input
+                type="checkbox"
+                checked={toolsEnabled}
+                disabled={busy}
+                onChange={(e) => setToolsEnabled(e.target.checked)}
+              />
+              AI tools / AI 工具
+            </label>
+          )}
+          {reminder && (
+            <p role="alert">
+              Reminder / 提醒：{reminder}
+              <button onClick={() => setReminder("")}>Dismiss / 關閉</button>
+            </p>
+          )}
+          {preview && (
+            <section role="dialog" aria-label="Confirm tool write">
+              <p>
+                {preview.tool}: {preview.target}
+              </p>
+              <p>
+                Review the complete before/after change. / 確認完整變更內容。
+              </p>
+              {preview.diff && (
+                <>
+                  <h3>Patch / 差異</h3>
+                  <pre>{preview.diff}</pre>
+                </>
+              )}
+              <h3>Before / 原內容</h3>
+              <pre>{preview.before || "(new / 新增)"}</pre>
+              <h3>After / 新內容</h3>
+              <pre>{preview.after}</pre>
+              <button onClick={() => approval.current?.(true)}>
+                Confirm write / 確認寫入
+              </button>
+              <button onClick={() => approval.current?.(false)}>
+                Reject / 拒絕
+              </button>
+            </section>
+          )}
           <p role="status">{reply}</p>
           <form onSubmit={send}>
             <input

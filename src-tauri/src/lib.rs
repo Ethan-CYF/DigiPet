@@ -1,3 +1,4 @@
+mod tools;
 mod api;
 use serde::Deserialize;
 use std::{
@@ -282,6 +283,8 @@ fn warn(app: &tauri::AppHandle, error: impl std::fmt::Display) {
 
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .manage(tools::Tools::default())
         .manage(api::Requests::default())
         .manage(Mutex::new(Interaction {
             enabled: !is_wayland(),
@@ -298,7 +301,10 @@ pub fn run() {
             api::remove_api_credential,
             api::redact_chat_text,
             api::api_reply,
-            api::stop_api_reply
+            api::stop_api_reply,
+            api::api_tool_turn,
+            tools::tool_registry, tools::tool_grants, tools::tool_grant, tools::tool_revoke_folder,
+            tools::tool_run, tools::tool_confirm, tools::tool_cancel, tools::tool_reminders
         ])
         .setup(|app| {
             // Initialize shortcuts separately so an unsupported compositor cannot

@@ -84,6 +84,36 @@ Linux 會產生 `.deb` 與 `.AppImage`；Windows 會產生 NSIS 安裝程式，�
 {"version":1,"columns":2,"rows":1,"fps":8,"states":{"idle":[0],"walk":[0,1],"happy":[1,0],"thinking":[0],"talking":[0,1],"sleep":[0],"sad":[1]}}
 ```
 
+### M4 AI 工具與權限
+
+在設定展開 **Tool permissions / 工具權限**，逐工具啟用；檔案操作需按
+**Choose allowed folder / 選擇允許資料夾**，每工具分別授權。聊天勾選 **AI tools / AI 工具**
+後，模型透過 M3 router 的 OpenAI 相容 function calling 執行任務。選取檔案與工具結果可能
+傳至已同意的供應商；工具模式使用非串流回合，泡泡顯示進度，**Stop / 停止** 可取消生成或等待確認。
+預設 12 步，包含模型回合及工具呼叫；未授權工具與路徑一律拒絕。
+
+- **Calendar**：建立／列出／更新／刪除本機事件、匯入／匯出 `.ics`。支援單次 UTC 事件
+  （`YYYYMMDDTHHMMSSZ`），不支援時區、重複事件與雲端同步。執行期間每 30 秒以泡泡提醒，
+  每事件每次執行提醒一次；重啟也會提醒已逾期事件。
+- **Report**：以對話填入標題與內文的簡單報告範本，輸出 Markdown 或跳脫 HTML 至允許資料夾。
+- **Journal**：依 `YYYY-MM-DD` 建立、列出、搜尋及編輯本機日記。
+- **Coding**：讀取允許專案檔、以對話解釋／建議、提出完整檔案替換的 unified diff 與前後內容；不執行任意 shell。
+- **File Search**：在允許資料夾搜尋檔名及 UTF-8 內容，遵守 `.gitignore`；排除隱藏檔、二進位檔與
+  超過 128 KiB 的檔案，最多走訪 10,000 個項目、回傳 50 筆結果及每筆 1,000 字元摘要。
+
+**每次資料寫入都先顯示完整 Before / After 預覽，按 Confirm write / 確認寫入後才寫入**，
+包含事件、日記、ICS 匯入與檔案匯出。拒絕或停止不寫入；確認前會重驗路徑、權限與原內容，
+若檔案改變須重新提出預覽。可在設定撤銷單一資料夾；撤銷工具會連同所有資料夾與待確認預覽一併撤銷。
+阻擋 `..`、symlink／Windows reparse point、系統及隱藏憑證路徑；工具內容不能授權或確認。
+
+事件、日記與授權存於應用程式 local data 的 `tools/tools-v1.json`。稽核
+`tools/audit-v1.log` 僅含時間、工具及結果代碼（1 MiB 輪替），不記錄內容、路徑或金鑰。
+驗證指令：`cargo test --locked --manifest-path tools-core/Cargo.toml`、`pnpm test:tools`
+（mock model → orchestrator → 真正 Rust 工具，無真實 API）、`pnpm test`、`pnpm test:browser`。
+Windows 與 Linux CI 執行相同核心與端到端測試，Linux 固定 `ubuntu-24.04`。
+Push／PR CI 建置原生程式並測試；安裝包僅在手動 `workflow_dispatch` 建置，避免 NSIS／AppRun 外部下載影響工具驗收。
+權限模型見 [ADR 0006](docs/adr/0006-tool-permissions.md)。
+
 ### 路線圖（後續列為規劃）
 
 | 里程碑 | 範圍 |
@@ -91,10 +121,10 @@ Linux 會產生 `.deb` 與 `.AppImage`；Windows 會產生 NSIS 安裝程式，�
 | M0 | 桌面視窗、像素寵物動畫、拖曳、stub 聊天、穿透、托盤、CI |
 | M1（完成） | 桌寵動畫與外觀：七狀態、單圖裁切／程序動作、sprite sheet、本機外觀管理、位置還原 |
 | M2（完成） | API 設定精靈、雲端同意、OS 金鑰庫憑證與可停止的單則 API 聊天；不下載模型 |
-| M3（本次） | AI 對話與 Provider Router：SSE、停止、多路由、逐供應商同意、明確 fallback、本機歷史、context 與角色提示 |
-| M4 | 可選工具與使用者授權的助理動作 |
+| M3 | AI 對話與 Provider Router：SSE、停止、多路由、逐供應商同意、明確 fallback、本機歷史、context 與角色提示 |
+| M4（本次） | 五種 AI 工具與權限：schema、orchestrator、逐工具／資料夾授權、寫入預覽確認與本機稽核 |
 | M5 | 可控的記憶、設定與隱私選項 |
-| M6 | Windows／Linux 相容性、效能、無障礙與測試 |
+| M6 | Windows／Linux 相容性、效能、無障礙、簽章與 release pipeline |
 | M7 | 穩定版本、文件、發行與社群貢獻流程 |
 
 架構決策：[0001-stack](docs/adr/0001-stack.md)、[0002-click-through](docs/adr/0002-click-through.md)、[0003-appearance](docs/adr/0003-appearance.md)、[0004-api-credentials](docs/adr/0004-api-credentials.md)、[0005-chat-router-history](docs/adr/0005-chat-router-history.md)。原有 [MIT LICENSE](LICENSE) 保留不變。
@@ -181,6 +211,43 @@ Click the pet, then **Appearance / 外觀**. Import, preview, switch, delete or 
 {"version":1,"columns":2,"rows":1,"fps":8,"states":{"idle":[0],"walk":[0,1],"happy":[1,0],"thinking":[0],"talking":[0,1],"sleep":[0],"sad":[1]}}
 ```
 
+### M4 AI tools and permissions
+
+In Settings, expand **Tool permissions**, enable each tool, and use **Choose allowed folder**
+for file access (grants are separate per tool). Enable **AI tools** in chat to run
+OpenAI-compatible function calls through the M3 router. Selected file contents and tool
+results may be sent to opted-in providers. Tool mode uses non-streaming turns with visible
+progress; **Stop** cancels generation or pending approval. The default 12-step limit counts
+both model turns and tool calls. Ungranted tools and paths are denied.
+
+- **Calendar:** local event create/list/update/delete and `.ics` import/export. Single UTC
+  events (`YYYYMMDDTHHMMSSZ`); no recurrence, timezone properties or cloud sync. Polls every
+  30 seconds while running, notifying once per event per session, including overdue events on restart.
+- **Report:** conversation fills a title/body template, then exports Markdown or escaped HTML
+  into an allowed folder.
+- **Journal:** local daily entries (`YYYY-MM-DD`), list/search/edit.
+- **Coding:** read allowed project files, explain/suggest in conversation, and propose a
+  complete file replacement with a unified diff and before/after preview. No arbitrary shell execution.
+- **File Search:** filenames and UTF-8 contents inside allowed folders, respecting `.gitignore`,
+  skipping hidden/binary files and files over 128 KiB. Bounded to 10,000 entries, 50 matches,
+  and 1,000-character excerpts.
+
+**Every tool-data write requires the complete Before/After preview and an explicit Confirm write**,
+including calendar/journal mutations, ICS imports and file exports. Reject or Stop leaves data
+unchanged. Confirmation rechecks permissions, paths and original contents; changed files require
+a fresh proposal. Settings can revoke individual folders; revoking a tool also revokes all its folders and pending previews.
+Traversal, symlinks/Windows reparse points, system and hidden credential paths are rejected.
+Tool output is untrusted data and cannot grant permissions or confirm a write.
+
+Events, journals and grants live in application local data `tools/tools-v1.json`. Audit file
+`tools/audit-v1.log` contains timestamps and fixed tool/outcome codes only (1 MiB rotation),
+never contents, paths or keys. Run `cargo test --locked --manifest-path tools-core/Cargo.toml`,
+`pnpm test:tools` (mock model → orchestrator → real Rust tools, no live API), `pnpm test`, and
+`pnpm test:browser`. Windows and Linux CI run the same core and end-to-end checks; Linux stays
+pinned to `ubuntu-24.04`. Push/PR CI builds and tests native binaries; installer bundles run
+only on manual `workflow_dispatch`, keeping external NSIS/AppRun downloads out of tool acceptance.
+See [ADR 0006](docs/adr/0006-tool-permissions.md).
+
 ### Roadmap (later milestones planned)
 
 | Milestone | Scope |
@@ -188,10 +255,10 @@ Click the pet, then **Appearance / 外觀**. Import, preview, switch, delete or 
 | M0 | Desktop shell, pet animation, drag, stub chat, click-through, tray, CI |
 | M1 (done) | Pet animation and appearance: seven states, single-image crop/procedural motion, sprite sheets, local library, position restore |
 | M2 (done) | API setup wizard, cloud consent, OS keychain credentials and cancellable single-message API chat; no model downloads |
-| M3 (this change) | AI chat and provider router: SSE, Stop, multiple routes, per-provider consent, explicit fallback, local history, context and persona |
-| M4 | Optional tools and user-authorized assistant actions |
+| M3 | AI chat and provider router: SSE, Stop, multiple routes, per-provider consent, explicit fallback, local history, context and persona |
+| M4 (this change) | AI tools & permissions: five tools, schemas, orchestrator, tool/folder grants, write previews/confirmation and local audit |
 | M5 | User-controlled memory, preferences and privacy |
-| M6 | Windows/Linux compatibility, performance, accessibility and testing |
+| M6 | Windows/Linux compatibility, performance, accessibility, signing and release pipeline |
 | M7 | Stable release, docs, distribution and contribution workflow |
 
 See [ADR 0001](docs/adr/0001-stack.md) and [ADR 0002](docs/adr/0002-click-through.md), and [ADR 0003](docs/adr/0003-appearance.md), and [ADR 0004](docs/adr/0004-api-credentials.md), and [ADR 0005](docs/adr/0005-chat-router-history.md). The existing [MIT LICENSE](LICENSE) is unchanged.

@@ -1,7 +1,7 @@
 name: Build desktop pet
 on:
   push:
-    branches: [main]
+    branches: [main, feat/m4-ai-tools]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -28,27 +28,44 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: src-tauri -> target
+          workspaces: |
+            src-tauri -> target
+            tools-core -> target
       - name: Linux dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential pkg-config file libxdo-dev libx11-dev libayatana-appindicator3-dev librsvg2-dev patchelf xvfb dbus-x11 libdbus-1-dev
       - run: pnpm install --frozen-lockfile
+      - run: cargo test --locked --manifest-path tools-core/Cargo.toml
       - run: pnpm build
       - name: Unit and interaction tests (mock APIs only)
         run: pnpm test
-      - name: Browser setup, chat and appearance smoke (Linux)
+      - name: Mock model through real Rust tools
+        run: pnpm test:tools
+      - name: Browser setup, chat, tools and appearance smoke (Linux)
         if: runner.os == 'Linux'
         run: |
           pnpm exec playwright install --with-deps chromium
           pnpm test:browser
       - run: cargo check --locked --manifest-path src-tauri/Cargo.toml
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
-      - name: Build unsigned installers
+      # M4 verifies native binaries without release-only NSIS/AppRun downloads.
+      - name: Build native application
+        run: pnpm tauri build --no-bundle
+      - name: Build unsigned installers (manual only)
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
-        run: pnpm tauri build
+        run: |
+          set +e
+          pnpm tauri build 2>&1 | tee installer-build.log
+          result=${PIPESTATUS[0]}
+          if [ "$result" -ne 0 ]; then
+            node -e 'const fs = require("node:fs"); const tail = fs.readFileSync("installer-build.log", "utf8").replace(/\u001b\[[0-9;]*m/g, "").trim().split(/\r?\n/).slice(-35).join("\n"); console.log("::error title=Installer build failure::" + tail.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A"));'
+          fi
+          exit "$result"
       - name: Linux X11 startup smoke
         if: runner.os == 'Linux'
         shell: bash
@@ -62,6 +79,7 @@ jobs:
           cat native-smoke.log
           test "$result" -eq 124
       - uses: actions/upload-artifact@v4
+        if: github.event_name == 'workflow_dispatch'
         with:
           name: DigiPet-${{ runner.os }}-unsigned
           path: |
