@@ -20,12 +20,22 @@ This is a basic **renderer** baseline, not native-process RSS, a GPU measurement
 or a guarantee for all desktops. Real local-tool correctness is independently
 covered through the Rust fixture and offline browser integration test.
 
-A Codex Cloud development observation (not the GitHub CI baseline): Linux kernel
-6.18.57, AMD EPYC 9V74, 5 logical CPUs, Node 24.19.0, Chromium 154.0.8037.57:
-55 draws; median 33.2 ms, p95 33.4 ms; renderer task delta 0.084316 s; heap
-4,933,408 bytes, delta +626,932 bytes over the scenario. These are measured values,
-not performance budgets; the CI artifact supplies the baseline for its own runner.
-A short heap delta includes normal allocation and is not evidence of a leak.
+Measured CI baseline: [run 42529379632](https://github.com/Ethan-CYF/DigiPet/actions/runs/42529379632),
+commit `a679189`, ubuntu24 image `20261101.360.1`, Linux kernel `7.0.0-1017-azure`,
+AMD EPYC 9V74, 4 logical CPUs, Node `22.23.4`, Chromium `145.0.7632.6`:
+
+| Measurement | Observed value |
+| --- | ---: |
+| Draw samples during pending work | 55 |
+| Median / p95 draw interval | 33.2 / 33.3 ms |
+| Renderer CPU task delta | 0.059298 s |
+| JS heap at end | 5,654,904 bytes |
+| JS heap delta | +1,553,308 bytes |
+
+These are baseline observations, not performance budgets. The same run's
+**M5-performance-Linux** artifact contains the source JSON and actual environment.
+Later artifacts record their own values. A short heap delta includes normal
+allocation and is not evidence of a leak.
 
 The liveness assertion only requires continued drawing during pending work;
 there is no invented fixed FPS/CPU pass threshold. Tauri tool IO/search and folder
@@ -36,6 +46,6 @@ requests; download URLs are revoked after use. Rerun the measurement if changing
 animation scheduling, provider streaming or tool execution.
 
 繁體中文：`pnpm test:perf` 會產生 CPU 工作時間、JS heap、繪製間隔與實際執行環境
-JSON，CI 固定 ubuntu-24.04 並保留 **M5-performance-Linux** artifact。上列 Cloud
-數值是實測參考，CI 基準以各次 artifact 為準；不設定不切實際的固定 FPS／CPU 門檻。
+JSON，CI 固定 ubuntu-24.04 並保留 **M5-performance-Linux** artifact。上列 CI
+數值是實測基準，各次 artifact 保留當次結果；不設定不切實際的固定 FPS／CPU 門檻。
 量測涵蓋 renderer；不把短時間 heap 增量誤稱為記憶體洩漏。
