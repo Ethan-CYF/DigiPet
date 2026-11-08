@@ -17,10 +17,16 @@ import {
   type AnimationState,
   type PetState,
 } from "./animation";
-import { apiReply, stubReply } from "./modules/ai-router";
+import { routedReply, stubReply } from "./modules/ai-router";
 import ApiSettings from "./ApiSettings";
-import { loadSettings } from "./modules/model-wizard";
+import { loadSettings, providerRoutes } from "./modules/model-wizard";
 
+import {
+  history,
+  contextMessages,
+  type Conversation,
+} from "./modules/chat-history";
+import { redact, withAbort } from "./modules/redaction";
 export default function App() {
   const desktop = isTauri();
   const [settings, setSettings] = useState(loadSettings);
@@ -28,6 +34,38 @@ export default function App() {
   const [open, setOpen] = useState(!settings.completed);
   const pending = useRef<AbortController | null>(null);
   const [busy, setBusy] = useState(false);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [current, setCurrent] = useState<Conversation | null>(null);
+  const currentRef = useRef<Conversation | null>(null);
+  const [historyError, setHistoryError] = useState("");
+  useEffect(() => {
+    void history
+      .list()
+      .then(setConversations)
+      .catch(() => setHistoryError("History unavailable / 歷史不可用"));
+  }, []);
+  async function persist(next: Conversation) {
+    currentRef.current = next;
+    setCurrent(next);
+    try {
+      await history.save(next);
+      setConversations(await history.list());
+      setHistoryError("");
+    } catch {
+      setHistoryError("History could not be saved / 無法儲存歷史");
+    }
+  }
+  function selectConversation(next: Conversation | null) {
+    currentRef.current = next;
+    setCurrent(next);
+    const last = next?.messages.filter((m) => m.role === "assistant").at(-1);
+    setReply(
+      last
+        ? last.content + (last.status === "stopped" ? "\nStopped / 已停止" : "")
+        : "你好！我是 DigiPet。",
+    );
+    setError("");
+  }
   const [managing, setManaging] = useState(false);
   const [library, setLibrary] = useState(loadLibrary);
   const [animation, setAnimation] = useState<AnimationState>({
@@ -98,7 +136,9 @@ export default function App() {
   useEffect(() => {
     if (open) {
       if (settingUp) {
-        bubble.current?.querySelector<HTMLInputElement>('[aria-label="API base URL"]')?.focus({ preventScroll: true });
+        bubble.current
+          ?.querySelector<HTMLInputElement>('[aria-label="API base URL"]')
+          ?.focus({ preventScroll: true });
         if (bubble.current) bubble.current.scrollTop = 0;
       } else if (managing) {
         bubble.current
@@ -198,62 +238,117 @@ export default function App() {
   }
   function stop() {
     pending.current?.abort();
-    pending.current = null;
-    setBusy(false);
-    setReply("Stopped / 已停止");
     changeState("idle");
   }
-  function send(event: FormEvent) {
+  async function send(event: FormEvent) {
     event.preventDefault();
     const message = text.trim();
-    if (!message || busy || settingUp) return;
+    if (!message || pending.current || busy || settingUp) return;
     changeState("thinking");
     setError("");
     setText("");
-    if (settings.route && settings.cloudConsent) {
+    if (providerRoutes(settings).length) {
       const controller = new AbortController();
       pending.current = controller;
       setBusy(true);
-      void apiReply(
-        message,
-        settings.route,
-        settings.cloudConsent,
-        controller.signal,
-      )
-        .then((result) => {
-          if (pending.current !== controller) return;
-          setReply(result);
-          changeState("talking");
+      setReply("");
+      let next: Conversation | null = null;
+      let partial = "";
+      try {
+        // Keychain-side redaction also covers configured keys after an app restart.
+        const clean = await withAbort(
+          invoke<string>("redact_chat_text", {
+            text: message,
+            credentialRefs: providerRoutes(settings).map(
+              (p) => p.route.credentialRef,
+            ),
+          }),
+          controller.signal,
+        );
+        if (controller.signal.aborted)
+          throw new DOMException("Stopped", "AbortError");
+        const userText = redact(clean);
+        const previous = currentRef.current;
+        next = {
+          id: previous?.id ?? crypto.randomUUID(),
+          title: previous?.title ?? userText.slice(0, 80),
+          updated: Date.now(),
+          messages: [
+            ...(previous?.messages ?? []),
+            { role: "user", content: userText },
+          ],
+        };
+        await persist(next);
+        const result = await routedReply(
+          contextMessages(
+            next.messages,
+            settings.contextWindow,
+            settings.systemPrompt,
+          ),
+          {
+            routes: providerRoutes(settings),
+            activeRouteId: settings.activeRouteId,
+            fallbackEnabled: settings.fallbackEnabled,
+            timeoutMs: settings.timeoutMs,
+            retries: settings.retries,
+          },
+          controller.signal,
+          (value) => {
+            if (!value) return;
+            partial = value;
+            setReply(value);
+            changeState("talking");
+          },
+        );
+        partial = result;
+        setReply(result);
+        await persist({
+          ...next,
+          messages: [
+            ...next.messages,
+            { role: "assistant", content: result, status: "complete" },
+          ],
+        });
+        changeState("talking");
+      } catch (e) {
+        const stopped = controller.signal.aborted;
+        if (stopped)
+          setReply(partial + (partial ? "\n" : "") + "Stopped / 已停止");
+        else
+          setError(
+            e instanceof Error && "code" in e
+              ? e.message
+              : "API request failed. Check settings, keychain and provider. / API 請求失敗，請檢查設定、金鑰庫及供應商。",
+          );
+        if (next)
+          await persist({
+            ...next,
+            messages: [
+              ...next.messages,
+              {
+                role: "assistant",
+                content: partial,
+                status: stopped ? "stopped" : "error",
+              },
+            ],
+          });
+        changeState(stopped ? "idle" : "sad");
+      } finally {
+        if (pending.current === controller) {
+          pending.current = null;
+          setBusy(false);
           timers.current.push(
             window.setTimeout(() => changeState("idle"), 1200),
           );
-        })
-        .catch((e) => {
-          if (pending.current !== controller) return;
-          setError(e.message);
-          changeState("sad");
-        })
-        .finally(() => {
-          if (pending.current === controller) {
-            pending.current = null;
-            setBusy(false);
-          }
-        });
+        }
+      }
     } else {
       timers.current.push(
         window.setTimeout(() => {
           setReply(stubReply(message));
-          setAnimation((current) =>
-            transition(current, "talking", performance.now()),
-          );
+          changeState("talking");
           timers.current.push(
-            window.setTimeout(
-              () =>
-                setAnimation((current) =>
-                  transition(current, "idle", performance.now()),
-                ),
-              1200,
-            ),
+            window.setTimeout(() => changeState("idle"), 1200),
           );
         }, 300),
       );
@@ -275,7 +370,7 @@ export default function App() {
         <section ref={bubble} className="bubble" aria-label="DigiPet chat">
           <header>
             <span>
-              DigiPet <small>M2</small>
+              DigiPet <small>M3</small>
             </span>
             <button aria-label="Close chat" onClick={() => setOpen(false)}>
               ×
@@ -329,6 +424,81 @@ export default function App() {
               animation={animation}
             />
           )}
+          {!settingUp && !managing && (
+            <section aria-label="Chat history">
+              <select
+                aria-label="Conversation"
+                disabled={busy}
+                value={current?.id ?? ""}
+                onChange={(e) =>
+                  selectConversation(
+                    conversations.find((c) => c.id === e.target.value) ?? null,
+                  )
+                }
+              >
+                <option value="">New conversation / 新對話</option>
+                {conversations.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.title}
+                  </option>
+                ))}
+              </select>
+              <button disabled={busy} onClick={() => selectConversation(null)}>
+                New / 新增
+              </button>
+              <button
+                disabled={busy || !current}
+                onClick={() => {
+                  if (current)
+                    void history
+                      .remove(current.id)
+                      .then(async () => {
+                        selectConversation(null);
+                        setConversations(await history.list());
+                      })
+                      .catch(() =>
+                        setHistoryError(
+                          "Could not delete history / 無法刪除歷史",
+                        ),
+                      );
+                }}
+              >
+                Delete / 刪除
+              </button>
+              <button
+                disabled={busy}
+                onClick={() => {
+                  void history
+                    .clear()
+                    .then(() => {
+                      selectConversation(null);
+                      setConversations([]);
+                    })
+                    .catch(() =>
+                      setHistoryError("Could not clear history / 無法清空歷史"),
+                    );
+                }}
+              >
+                Clear all / 全部清除
+              </button>
+              {current && (
+                <details>
+                  <summary>Messages / 訊息</summary>
+                  {current.messages.map((m, i) => (
+                    <p key={i}>
+                      {m.role}: {m.content}{" "}
+                      {m.status === "stopped"
+                        ? "(Stopped / 已停止)"
+                        : m.status === "error"
+                          ? "(Incomplete / 未完成)"
+                          : ""}
+                    </p>
+                  ))}
+                </details>
+              )}
+            </section>
+          )}
+          {historyError && <p className="error">{historyError}</p>}
           <p role="status">{reply}</p>
           <form onSubmit={send}>
             <input
