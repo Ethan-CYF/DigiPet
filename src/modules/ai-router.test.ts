@@ -214,3 +214,35 @@ describe("API-only router", () => {
     ).toHaveLength(2);
   });
 });
+it("ignores late IPC snapshots after completion and never retries unclassified failures", async () => {
+  native.invoke.mockResolvedValue("complete");
+  const update = vi.fn();
+  expect(
+    await nativeTransport(
+      provider("a").route,
+      messages,
+      signal(),
+      update,
+      1000,
+    ),
+  ).toBe("complete");
+  native.channel.onmessage({ text: "late" });
+  expect(update).not.toHaveBeenCalled();
+  const transport = vi
+    .fn()
+    .mockRejectedValue(new Error("untrusted provider detail"));
+  await expect(
+    routedReply(
+      messages,
+      {
+        routes: [provider("a"), provider("b")],
+        fallbackEnabled: true,
+        retries: 2,
+      },
+      signal(),
+      update,
+      transport,
+    ),
+  ).rejects.not.toThrow("untrusted");
+  expect(transport).toHaveBeenCalledTimes(1);
+});

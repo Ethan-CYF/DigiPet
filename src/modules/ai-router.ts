@@ -65,8 +65,10 @@ export const nativeTransport: Transport = async (
 ) => {
   if (signal.aborted) throw aborted();
   const requestId = crypto.randomUUID();
+  let accepting = true;
   const onUpdate = new Channel<{ text?: string; ready?: boolean }>();
   onUpdate.onmessage = (event) => {
+    if (!accepting) return;
     if (event.ready && signal.aborted) stop();
     if (!signal.aborted && typeof event.text === "string")
       update(redact(event.text));
@@ -99,6 +101,7 @@ export const nativeTransport: Transport = async (
         : "API failed",
     );
   } finally {
+    accepting = false;
     signal.removeEventListener("abort", stop);
   }
 };
