@@ -11,7 +11,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run src",
-    "test:browser": "playwright test"
+    "test:browser": "playwright test",
+    "test:tools": "cargo build --locked --manifest-path tools-core/Cargo.toml --example model_fixture && vitest run tests/tools-e2e.test.ts"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",
