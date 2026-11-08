@@ -1,3 +1,4 @@
+import { reportRecovery, resetStorageComponent } from "./recovery";
 /** Local, data-only appearance pipeline. No paths, URLs, scripts or native FS access. */
 import type { PetState } from "../animation";
 import { STATES } from "../animation";
@@ -106,26 +107,91 @@ export function inspectPng(bytes: Uint8Array): {
   if (!integer(width, 1, MAX_SIDE) || !integer(height, 1, MAX_SIDE))
     throw Error("PNG dimensions must be 1–2048 / PNG 邊長需為 1–2048");
   // Animated PNGs are outside this format; each animation is controlled by our state machine.
-  let offset = 8;
+  if (
+    view.getUint32(8) !== 13 ||
+    bytes[26] !== 0 ||
+    bytes[27] !== 0 ||
+    bytes[28] > 1
+  )
+    throw Error("Invalid PNG header / 無效 PNG 標頭");
+  const validDepths: Record<number, number[]> = {
+    0: [1, 2, 4, 8, 16],
+    2: [8, 16],
+    3: [1, 2, 4, 8],
+    4: [8, 16],
+    6: [8, 16],
+  };
+  if (!validDepths[bytes[25]]?.includes(bytes[24]))
+    throw Error("Invalid PNG pixels / 無效像素格式");
+  let offset = 8,
+    chunks = 0,
+    data = false,
+    endedData = false,
+    palette = false;
   while (offset + 12 <= bytes.length) {
     const size = view.getUint32(offset);
     const type = String.fromCharCode(...bytes.slice(offset + 4, offset + 8));
     if (size > bytes.length - offset - 12 || type === "acTL")
       throw Error("Invalid or animated PNG / 無效或動態 PNG");
+    if (++chunks > 4096 || !/^[A-Za-z]{4}$/.test(type))
+      throw Error("Invalid PNG chunks / 無效 PNG 區塊");
+    let crc = 0xffffffff;
+    for (let i = offset + 4; i < offset + 8 + size; i++) {
+      crc ^= bytes[i];
+      for (let bit = 0; bit < 8; bit++)
+        crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+    if ((crc ^ 0xffffffff) >>> 0 !== view.getUint32(offset + 8 + size))
+      throw Error("PNG checksum failed / PNG 校驗失敗");
+    if (
+      (type === "IHDR" && offset !== 8) ||
+      (!["IHDR", "PLTE", "IDAT", "IEND"].includes(type) &&
+        type[0] === type[0].toUpperCase()) ||
+      ["iCCP", "zTXt", "iTXt"].includes(type)
+    )
+      throw Error("Unsupported PNG chunk / 不支援的 PNG 區塊");
+    if (type === "PLTE") {
+      if (palette || data || !size || size > 768 || size % 3)
+        throw Error("Invalid PNG palette");
+      palette = true;
+    }
+    if (type === "IDAT") {
+      if (endedData || (bytes[25] === 3 && !palette))
+        throw Error("Invalid PNG data order");
+      data = true;
+    } else if (data) endedData = true;
     offset += size + 12;
     if (type === "IEND") {
-      if (offset !== bytes.length) throw Error("Unexpected PNG trailing data");
+      if (!data || size !== 0 || offset !== bytes.length)
+        throw Error("Unexpected PNG trailing data");
       return { width, height };
     }
   }
   throw Error("Incomplete PNG / 不完整 PNG");
 }
 export function decodePng(png: string): Promise<HTMLImageElement> {
+  try {
+    if (
+      !/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(png) ||
+      png.length > MAX_BYTES * 1.4
+    )
+      throw Error("Invalid PNG / 無效 PNG");
+    inspectPng(Uint8Array.from(atob(png.slice(22)), (c) => c.charCodeAt(0)));
+  } catch {
+    return Promise.reject(Error("Invalid PNG / 無效 PNG"));
+  }
   return new Promise((resolve, reject) => {
     const img = new Image();
     img.onload = async () => {
       try {
         if (typeof img.decode === "function") await img.decode();
+        if (
+          img.naturalWidth < 1 ||
+          img.naturalHeight < 1 ||
+          img.naturalWidth > MAX_SIDE ||
+          img.naturalHeight > MAX_SIDE
+        )
+          throw Error("PNG dimensions exceeded / PNG 尺寸超限");
         // A nominally loaded but empty/corrupted bitmap must not hide the pet.
         const canvas = document.createElement("canvas");
         canvas.width = img.naturalWidth;
@@ -251,6 +317,7 @@ export function loadLibrary(): Library {
         : "default",
     };
   } catch {
+    reportRecovery(KEY);
     return { appearances: [], selected: "default" };
   }
 }
@@ -262,4 +329,29 @@ export function saveLibrary(library: Library) {
   if (json.length > 4_500_000)
     throw Error("Local library full / 本機外觀庫已滿");
   localStorage.setItem(KEY, json); // Caller keeps old state if storage is full or denied.
+}
+
+export async function repairLibrary() {
+  let appearances: Appearance[] = [];
+  let selected = "default";
+  try {
+    const value = JSON.parse(localStorage.getItem(KEY) ?? "null");
+    if (Array.isArray(value?.appearances)) {
+      for (const row of value.appearances.slice(0, 8)) {
+        try {
+          const valid = validateAppearance(row);
+          await decodePng(valid.png);
+          if (!appearances.some((a) => a.id === valid.id))
+            appearances.push(valid);
+        } catch {
+          /* Only malformed entries are removed after backup. */
+        }
+      }
+      if (appearances.some((a) => a.id === value.selected))
+        selected = value.selected;
+    }
+  } catch {
+    /* Unparseable library is preserved in the backup. */
+  }
+  resetStorageComponent(KEY, JSON.stringify({ appearances, selected }));
 }

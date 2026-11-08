@@ -1,7 +1,7 @@
 name: Build desktop pet
 on:
   push:
-    branches: [main, feat/m4-ai-tools]
+    branches: [main, feat/m5-hardening]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -38,6 +38,8 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential pkg-config file libxdo-dev libx11-dev libayatana-appindicator3-dev librsvg2-dev patchelf xvfb dbus-x11 libdbus-1-dev
       - run: pnpm install --frozen-lockfile
       - run: cargo test --locked --manifest-path tools-core/Cargo.toml
+      - name: Repository credential-pattern scan
+        run: node scripts/check-secrets.mjs
       - run: pnpm build
       - name: Unit and interaction tests (mock APIs only)
         run: pnpm test
@@ -48,6 +50,12 @@ jobs:
         run: |
           pnpm exec playwright install --with-deps chromium
           pnpm test:browser
+      - name: Performance and browser evidence
+        uses: actions/upload-artifact@v4
+        if: always() && runner.os == 'Linux'
+        with:
+          name: M5-performance-${{ runner.os }}
+          path: test-results/
       - run: cargo check --locked --manifest-path src-tauri/Cargo.toml
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
       # M4 verifies native binaries without release-only NSIS/AppRun downloads.

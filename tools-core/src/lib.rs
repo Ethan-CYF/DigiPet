@@ -273,6 +273,53 @@ impl Engine {
             roots,
         })
     }
+    /// UI-only explicit repair. Preserve every deserializable component, backup before replacing.
+    pub fn repair(dir: PathBuf) -> Result<()> {
+        fs::create_dir_all(&dir).map_err(|_| "Storage unavailable")?;
+        let path = dir.join("tools-v1.json");
+        if !path.exists() {
+            return Ok(());
+        }
+        let bytes = fs::read(&path).map_err(|_| "Backup unavailable")?;
+        let value: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
+        let saved = Saved {
+            grants: serde_json::from_value(value["grants"].clone()).unwrap_or_default(),
+            calendar: value["calendar"]
+                .as_array()
+                .map(|rows| {
+                    rows.iter()
+                        .filter_map(|r| serde_json::from_value(r.clone()).ok())
+                        .collect()
+                })
+                .unwrap_or_default(),
+            journal: value["journal"]
+                .as_array()
+                .map(|rows| {
+                    rows.iter()
+                        .filter_map(|r| serde_json::from_value(r.clone()).ok())
+                        .collect()
+                })
+                .unwrap_or_default(),
+        };
+        // create_new prevents overwriting any previous backup. Never log its contents.
+        use std::io::Write;
+        let backup = dir.join(format!("tools-v1.backup-{}.json", uuid::Uuid::new_v4()));
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(backup)
+            .map_err(|_| "Backup failed; original preserved")?;
+        file.write_all(&bytes)
+            .and_then(|_| file.sync_all())
+            .map_err(|_| "Backup failed; original preserved")?;
+        let temporary = dir.join("tools-repair.tmp");
+        fs::write(
+            &temporary,
+            serde_json::to_vec(&saved).map_err(|_| "Repair failed")?,
+        )
+        .map_err(|_| "Repair failed")?;
+        fs::rename(temporary, path).map_err(|_| "Repair failed".into())
+    }
     fn save(&self) -> Result<()> {
         let tmp = self.dir.join("tools-v1.tmp");
         fs::write(
@@ -315,6 +362,13 @@ impl Engine {
         if !NAMES.contains(&tool) {
             return err();
         }
+        let previous = self.saved.grants.clone();
+        let previous_roots = self
+            .roots
+            .iter()
+            .map(|(key, dir)| dir.try_clone().map(|copy| (key.clone(), copy)))
+            .collect::<std::io::Result<BTreeMap<_, _>>>()
+            .map_err(|_| "Folder state unavailable")?;
         self.pending.clear();
         if enabled {
             if let Some(folder) = folder {
@@ -341,8 +395,8 @@ impl Engine {
         }
         let result = self.audit(tool, "grant_changed").and_then(|_| self.save());
         if result.is_err() {
-            self.saved.grants = Grants::default();
-            self.roots.clear();
+            self.saved.grants = previous;
+            self.roots = previous_roots;
         }
         result
     }
@@ -351,6 +405,13 @@ impl Engine {
         if !NAMES.contains(&tool) {
             return err();
         }
+        let previous = self.saved.grants.clone();
+        let previous_roots = self
+            .roots
+            .iter()
+            .map(|(key, dir)| dir.try_clone().map(|copy| (key.clone(), copy)))
+            .collect::<std::io::Result<BTreeMap<_, _>>>()
+            .map_err(|_| "Folder state unavailable")?;
         self.pending.clear();
         if let Some(folders) = self.saved.grants.folders.get_mut(tool) {
             folders.remove(&folder);
@@ -358,8 +419,8 @@ impl Engine {
         self.roots.remove(&(tool.into(), folder));
         let result = self.audit(tool, "folder_revoked").and_then(|_| self.save());
         if result.is_err() {
-            self.saved.grants = Grants::default();
-            self.roots.clear();
+            self.saved.grants = previous;
+            self.roots = previous_roots;
         }
         result
     }
@@ -532,7 +593,7 @@ impl Engine {
                     .git_ignore(true)
                     .git_global(false)
                     .git_exclude(false)
-                    .parents(false)
+                    .parents(true)
                     .require_git(false)
                     .follow_links(false)
                     .max_filesize(Some(LIMIT as u64))
@@ -631,6 +692,14 @@ impl Engine {
                 let mut file = dir
                     .open_with(&temporary, &options)
                     .map_err(|_| "Write denied")?;
+                if p.exists() {
+                    let permissions = dir
+                        .metadata(relative)
+                        .map_err(|_| "Metadata unavailable")?
+                        .permissions();
+                    file.set_permissions(permissions)
+                        .map_err(|_| "Permissions unavailable")?;
+                }
                 file.write_all(pending.preview.after.as_bytes())
                     .map_err(|_| "Write failed")?;
                 file.sync_all().map_err(|_| "Write failed")?;
@@ -801,6 +870,137 @@ mod tests {
     }
     fn call(e: &mut Engine, name: &str, args: Value) -> Value {
         e.run(name, args).unwrap()
+    }
+    proptest::proptest! {
+        #![proptest_config(proptest::test_runner::Config::with_cases(256))]
+        #[test]
+        fn arbitrary_model_fields_cannot_grant_or_write(field in "[a-zA-Z_]{1,40}", text in ".{0,200}") {
+            let mut value = json!({"action":"read"});
+            value[&field] = json!(text);
+            if !["action","path","id","text","title","date","format"].contains(&field.as_str()) {
+                proptest::prop_assert!(validate("coding", value).is_err());
+            }
+        }
+        #[test]
+        fn generated_traversal_cannot_leave_granted_root(leaf in "[a-zA-Z]{1,30}") {
+            let mut f = fixture();
+            grant(&mut f, "coding");
+            let attack = f.root.join("..").join(format!("{leaf}.txt"));
+            let before = serde_json::to_value(f.engine.grants()).unwrap();
+            let result = f.engine.run("coding", json!({"action":"patch", "path":attack,"text":"attack"}));
+            proptest::prop_assert!(result.is_err());
+            proptest::prop_assert_eq!(serde_json::to_value(f.engine.grants()).unwrap(), before);
+            proptest::prop_assert!(!attack.exists());
+        }
+    }
+    #[test]
+    fn repair_backs_up_bytes_and_preserves_healthy_records_and_grants() {
+        let mut f = fixture();
+        grant(&mut f, "journal");
+        grant(&mut f, "calendar");
+        let value = call(
+            &mut f.engine,
+            "journal",
+            json!({"action":"create","title":"Healthy","date":"2026-11-09","text":"keep"}),
+        );
+        confirm(&mut f.engine, &value);
+        let file = f.engine.dir.join("tools-v1.json");
+        let mut data: Value = serde_json::from_slice(&fs::read(&file).unwrap()).unwrap();
+        data["calendar"] = json!([{"broken":true}]);
+        let raw = serde_json::to_vec(&data).unwrap();
+        fs::write(&file, &raw).unwrap();
+        assert!(Engine::open(f.engine.dir.clone()).is_err());
+        Engine::repair(f.engine.dir.clone()).unwrap();
+        let recovered = Engine::open(f.engine.dir.clone()).unwrap();
+        assert_eq!(
+            serde_json::to_value(recovered.grants()).unwrap(),
+            data["grants"]
+        );
+        assert_eq!(recovered.saved.journal[0].text, "keep");
+        assert!(recovered.saved.calendar.is_empty());
+        let backup = fs::read_dir(&f.engine.dir)
+            .unwrap()
+            .flatten()
+            .find(|e| e.file_name().to_string_lossy().contains("backup-"))
+            .unwrap();
+        assert_eq!(fs::read(backup.path()).unwrap(), raw);
+    }
+    #[test]
+    #[cfg(unix)]
+    fn atomic_replacement_preserves_private_and_executable_permissions() {
+        use std::os::unix::fs::PermissionsExt;
+        let mut f = fixture();
+        grant(&mut f, "coding");
+        for mode in [0o600, 0o700] {
+            let path = f.root.join("private.sh");
+            fs::write(&path, "old").unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(mode)).unwrap();
+            let result = call(
+                &mut f.engine,
+                "coding",
+                json!({"action":"patch","path":path,"text":"new"}),
+            );
+            confirm(&mut f.engine, &result);
+            assert_eq!(
+                fs::metadata(&path).unwrap().permissions().mode() & 0o777,
+                mode
+            );
+        }
+    }
+    #[test]
+    fn nested_search_honors_ancestor_ignore_rules() {
+        let mut f = fixture();
+        grant(&mut f, "file_search");
+        let nested = f.root.join("nested");
+        fs::create_dir(&nested).unwrap();
+        fs::write(f.root.join(".gitignore"), "private.txt\n").unwrap();
+        fs::write(nested.join("private.txt"), "needle secret").unwrap();
+        fs::write(nested.join("public.txt"), "needle public").unwrap();
+        let result = call(
+            &mut f.engine,
+            "file_search",
+            json!({"action":"search","path":nested,"text":"needle"}),
+        );
+        assert!(result.to_string().contains("public.txt"));
+        assert!(!result.to_string().contains("private.txt"));
+    }
+    #[test]
+    fn failed_revocation_restores_permissions_and_live_folder_handles() {
+        let mut f = fixture();
+        grant(&mut f, "coding");
+        let file = f.root.join("source.txt");
+        fs::write(&file, "healthy").unwrap();
+        for folder_only in [false, true] {
+            let audit = f.engine.dir.join("audit-v1.log");
+            fs::remove_file(&audit).unwrap();
+            fs::create_dir(&audit).unwrap(); // Deterministic storage failure on Windows and Linux.
+            let failed = if folder_only {
+                f.engine
+                    .revoke_folder("coding", fs::canonicalize(&f.root).unwrap())
+            } else {
+                f.engine.grant("coding", false, None)
+            };
+            assert!(failed.is_err());
+            fs::remove_dir(&audit).unwrap();
+            assert!(f.engine.grants().tools.contains("coding"));
+            let read = call(
+                &mut f.engine,
+                "coding",
+                json!({"action":"read","path":file}),
+            );
+            assert_eq!(read["untrusted_data"], "healthy");
+        }
+    }
+    #[test]
+    fn audit_never_contains_tool_input_secrets() {
+        let mut f = fixture();
+        let _ = f.engine.run("grant", json!({"apiKey":"fixture-private"}));
+        let _ = f
+            .engine
+            .run("coding", json!({"action":"patch","text":"fixture-private"}));
+        let log = fs::read_to_string(f.engine.dir.join("audit-v1.log")).unwrap();
+        assert!(!log.contains("fixture-private"));
+        assert!(!log.contains("apiKey"));
     }
     #[test]
     fn strict_schema_rejects_unknown_fields_types_tools_and_actions() {

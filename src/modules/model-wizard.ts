@@ -1,8 +1,12 @@
+import { reportRecovery } from "./recovery";
 import { invoke } from "@tauri-apps/api/core";
 import { rememberSecret, redact } from "./redaction";
 import type { ProviderRoute, ModelRoute } from "./ai-router";
 export type ApiRoute = Extract<ModelRoute, { kind: "openai-compatible" }>;
 export interface Settings {
+  version?: 5;
+  openOnStartup?: boolean;
+  rememberConversation?: boolean;
   completed: boolean;
   route?: ApiRoute;
   cloudConsent: boolean;
@@ -44,6 +48,21 @@ export function validateConfig(baseUrl: string, model: string) {
   return { baseUrl: url.toString().replace(/\/+$/, ""), model: model.trim() };
 }
 export function safeSettings(value: Settings): Settings {
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    (value.version !== undefined && value.version !== 5)
+  )
+    return fail();
+  return {
+    ...safeApiSettings(value),
+    version: 5,
+    openOnStartup: value.openOnStartup === true,
+    rememberConversation: value.rememberConversation !== false,
+  };
+}
+function safeApiSettings(value: Settings): Settings {
   if (value.routes) {
     if (!Array.isArray(value.routes) || value.routes.length > 8) return fail();
     const routes = value.routes.map((p) => {
@@ -105,11 +124,21 @@ export function safeSettings(value: Settings): Settings {
 }
 export function loadSettings(): Settings {
   try {
-    return safeSettings(
-      JSON.parse(localStorage.getItem(SETTINGS_KEY) || "null"),
-    );
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (!raw) return safeSettings(emptySettings());
+    if (raw.length > 64000) throw Error("Settings too large");
+    const parsed = JSON.parse(raw);
+    const next = safeSettings(parsed);
+    // M2 single route and M3/M4 route arrays actually shared this key.
+    // Preserve the original before writing the explicit M5 version.
+    if (parsed.version === undefined) {
+      localStorage.setItem(SETTINGS_KEY + ".pre-m5", raw);
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
+    }
+    return next;
   } catch {
-    return emptySettings();
+    reportRecovery(SETTINGS_KEY);
+    return safeSettings(emptySettings());
   }
 }
 export function saveSettings(settings: Settings) {
