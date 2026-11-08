@@ -296,6 +296,7 @@ pub fn run() {
             resize_pet,
             api::save_api_credential,
             api::remove_api_credential,
+            api::redact_chat_text,
             api::api_reply,
             api::stop_api_reply
         ])

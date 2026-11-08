@@ -81,6 +81,30 @@ pub async fn remove_api_credential(credential_ref: String) -> Result<(), String>
     .await
     .map_err(|_| KEYCHAIN_ERROR)?
 }
+/// No provider calls: scrub saved keys inside the keychain boundary before history writes.
+#[tauri::command]
+pub async fn redact_chat_text(
+    text: String,
+    credential_refs: Vec<String>,
+) -> Result<String, String> {
+    if text.len() > 16000 || credential_refs.len() > 8 {
+        return Err("Invalid message".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut clean = text;
+        for reference in credential_refs {
+            let secret = entry(&reference)?
+                .get_password()
+                .map_err(|_| KEYCHAIN_ERROR)?;
+            let credential: Credential =
+                serde_json::from_str(&secret).map_err(|_| KEYCHAIN_ERROR)?;
+            clean = clean.replace(&credential.api_key, "[REDACTED]");
+        }
+        Ok(clean)
+    })
+    .await
+    .map_err(|_| KEYCHAIN_ERROR)?
+}
 #[tauri::command]
 pub fn stop_api_reply(request_id: String, requests: tauri::State<'_, Requests>) {
     if let Ok(active) = requests.0.lock() {
@@ -89,38 +113,217 @@ pub fn stop_api_reply(request_id: String, requests: tauri::State<'_, Requests>) 
         }
     }
 }
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct Message {
+    role: String,
+    content: String,
+}
+#[derive(Clone, Serialize)]
+pub struct Update {
+    ready: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    text: Option<String>,
+}
+
+// Incremental byte framing preserves split UTF-8 and CR/LF boundaries.
+#[derive(Default)]
+struct Sse {
+    pending: Vec<u8>,
+    data: Vec<String>,
+    output: String,
+    done: bool,
+    finished: bool,
+}
+impl Sse {
+    fn event(&mut self) -> Result<(), String> {
+        if self.data.is_empty() {
+            return Ok(());
+        }
+        let data = self.data.join("\n");
+        self.data.clear();
+        if data == "[DONE]" {
+            self.done = true;
+            return Ok(());
+        }
+        let value: serde_json::Value =
+            serde_json::from_str(&data).map_err(|_| "Invalid API stream")?;
+        if value.get("error").is_some() {
+            return Err("API stream error".into());
+        }
+        if let Some(text) = value
+            .pointer("/choices/0/delta/content")
+            .and_then(|v| v.as_str())
+        {
+            self.output.push_str(text);
+        }
+        if value
+            .pointer("/choices/0/finish_reason")
+            .is_some_and(|v| !v.is_null())
+        {
+            self.finished = true;
+        }
+        Ok(())
+    }
+    fn feed(&mut self, bytes: &[u8], eof: bool) -> Result<(), String> {
+        self.pending.extend_from_slice(bytes);
+        loop {
+            let Some(pos) = self.pending.iter().position(|b| *b == b'\n' || *b == b'\r') else {
+                break;
+            };
+            if self.pending[pos] == b'\r' && pos + 1 == self.pending.len() && !eof {
+                break;
+            }
+            let skip = if self.pending[pos] == b'\r' && self.pending.get(pos + 1) == Some(&b'\n') {
+                2
+            } else {
+                1
+            };
+            let line = String::from_utf8(self.pending[..pos].to_vec())
+                .map_err(|_| "Invalid API stream")?;
+            self.pending.drain(..pos + skip);
+            if self.done {
+                continue;
+            }
+            if line.is_empty() {
+                self.event()?;
+            } else if let Some(data) = line.strip_prefix("data:") {
+                self.data
+                    .push(data.strip_prefix(' ').unwrap_or(data).to_owned());
+            }
+        }
+        if self.pending.len() > 65536 || self.data.iter().map(String::len).sum::<usize>() > 65536 {
+            return Err("API event too large".into());
+        }
+        if eof {
+            if !self.pending.is_empty() {
+                return Err("Incomplete API stream".into());
+            }
+            self.event()?;
+            if !self.done && !self.finished {
+                return Err("Incomplete API stream".into());
+            }
+        }
+        Ok(())
+    }
+}
+// Withhold any suffix that could be a split credential, then redact before IPC.
+fn safe_output(text: &str, key: &str, finished: bool) -> String {
+    let safe = text.replace(key, "[REDACTED]");
+    if finished {
+        return safe;
+    }
+    let withheld = (1..key.len())
+        .filter(|n| key.is_char_boundary(*n) && safe.ends_with(&key[..*n]))
+        .max()
+        .unwrap_or(0);
+    safe[..safe.len() - withheld].to_owned()
+}
+async fn complete_messages(
+    client: &reqwest::Client,
+    route: &Route,
+    key: &str,
+    messages: &[Message],
+    mut update: impl FnMut(String),
+) -> Result<String, String> {
+    let url = format!("{}/chat/completions", route.base_url.trim_end_matches('/'));
+    let mut response = client
+        .post(&url)
+        .bearer_auth(key)
+        .json(&serde_json::json!({"model":route.model,"messages":messages,"stream":true}))
+        .send()
+        .await
+        .map_err(|e| {
+            if e.is_timeout() {
+                "API timeout"
+            } else {
+                "API connection failed"
+            }
+        })?;
+    // Some compatible servers explicitly reject streaming. Retry only this same endpoint.
+    if matches!(response.status().as_u16(), 400 | 415 | 422) {
+        response = client
+            .post(&url)
+            .bearer_auth(key)
+            .json(&serde_json::json!({"model":route.model,"messages":messages,"stream":false}))
+            .send()
+            .await
+            .map_err(|_| "API connection failed")?;
+    }
+    if !response.status().is_success() {
+        return Err(format!("API HTTP {}", response.status().as_u16()));
+    }
+    let streaming = response
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .is_some_and(|v| v.to_ascii_lowercase().starts_with("text/event-stream"));
+    let mut bytes = Vec::new();
+    let mut parser = Sse::default();
+    let mut total = 0;
+    while let Some(chunk) = response.chunk().await.map_err(|e| {
+        if e.is_timeout() {
+            "API timeout"
+        } else {
+            "API response failed"
+        }
+    })? {
+        total += chunk.len();
+        if total > 1024 * 1024 {
+            return Err("API response too large".into());
+        }
+        if streaming {
+            parser.feed(&chunk, false)?;
+            update(safe_output(&parser.output, key, false));
+            if parser.done {
+                break;
+            }
+        } else {
+            bytes.extend_from_slice(&chunk);
+        }
+    }
+    let output = if streaming {
+        parser.feed(&[], true)?;
+        parser.output
+    } else {
+        let value: serde_json::Value =
+            serde_json::from_slice(&bytes).map_err(|_| "Invalid API response")?;
+        value
+            .pointer("/choices/0/message/content")
+            .and_then(|v| v.as_str())
+            .ok_or("Missing API reply")?
+            .to_owned()
+    };
+    let safe = safe_output(&output, key, true);
+    update(safe.clone());
+    Ok(safe)
+}
+#[cfg(test)]
 async fn complete(
     client: &reqwest::Client,
     route: &Route,
     key: &str,
     text: &str,
 ) -> Result<String, String> {
-    let mut response = client.post(format!("{}/chat/completions", route.base_url.trim_end_matches('/')))
-        .bearer_auth(key)
-        .json(&serde_json::json!({"model": route.model, "messages": [{"role":"user", "content":text}], "stream":false}))
-        .send().await.map_err(|_| "API connection failed")?;
-    if !response.status().is_success() {
-        return Err(format!("API HTTP {}", response.status().as_u16()));
-    }
-    // Bound memory even when Content-Length is missing or misleading.
-    let mut bytes = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(|_| "API response failed")? {
-        if bytes.len() + chunk.len() > 1024 * 1024 {
-            return Err("API response too large".into());
-        }
-        bytes.extend_from_slice(&chunk);
-    }
-    let body: serde_json::Value =
-        serde_json::from_slice(&bytes).map_err(|_| "Invalid API response")?;
-    body.pointer("/choices/0/message/content")
-        .and_then(|v| v.as_str())
-        .map(str::to_owned)
-        .ok_or("Missing API reply".into())
+    complete_messages(
+        client,
+        route,
+        key,
+        &[Message {
+            role: "user".into(),
+            content: text.into(),
+        }],
+        |_| {},
+    )
+    .await
 }
 async fn cancellable<T>(
     mut receiver: watch::Receiver<bool>,
     task: impl std::future::Future<Output = Result<T, String>>,
 ) -> Result<T, String> {
+    if *receiver.borrow() {
+        return Err("Request stopped".into());
+    }
     tokio::select! {
         biased;
         _ = receiver.changed() => Err("Request stopped".into()),
@@ -133,6 +336,9 @@ pub async fn api_reply(
     route: Route,
     text: String,
     consent: bool,
+    messages: Vec<Message>,
+    timeout_ms: u64,
+    on_update: tauri::ipc::Channel<Update>,
     requests: tauri::State<'_, Requests>,
 ) -> Result<String, String> {
     if !consent || route.kind != "openai-compatible" {
@@ -143,6 +349,18 @@ pub async fn api_reply(
     if text.trim().is_empty() || text.chars().count() > 500 {
         return Err("Invalid message".into());
     }
+    if messages
+        .last()
+        .is_none_or(|m| m.role != "user" || m.content != text)
+        || messages.len() > 101
+        || messages.iter().any(|m| {
+            !matches!(m.role.as_str(), "user" | "assistant" | "system")
+                || m.content.len() > 1024 * 1024
+        })
+        || messages.iter().map(|m| m.content.len()).sum::<usize>() > 2 * 1024 * 1024
+    {
+        return Err("Invalid context".into());
+    }
     let (sender, receiver) = watch::channel(false);
     {
         let mut active = requests.0.lock().map_err(|_| "Request state unavailable")?;
@@ -151,6 +369,10 @@ pub async fn api_reply(
         }
         active.insert(request_id.clone(), sender);
     }
+    let _ = on_update.send(Update {
+        ready: true,
+        text: None,
+    });
     let result = async {
         let reference = route.credential_ref.clone();
         let secret = tauri::async_runtime::spawn_blocking(move || {
@@ -167,12 +389,23 @@ pub async fn api_reply(
         }
         let client = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
-            .timeout(Duration::from_secs(60))
+            .timeout(Duration::from_millis(timeout_ms.clamp(1000, 120000)))
             .build()
             .map_err(|_| "API client unavailable")?;
-        complete(&client, &route, &credential.api_key, &text).await
+        complete_messages(&client, &route, &credential.api_key, &messages, |text| {
+            let _ = on_update.send(Update {
+                ready: false,
+                text: Some(text),
+            });
+        })
+        .await
     };
-    let output = cancellable(receiver, result).await;
+    let output = tokio::time::timeout(
+        Duration::from_millis(timeout_ms.clamp(1000, 120000)),
+        cancellable(receiver, result),
+    )
+    .await
+    .unwrap_or_else(|_| Err("API timeout".into()));
     if let Ok(mut active) = requests.0.lock() {
         active.remove(&request_id);
     }
@@ -181,6 +414,58 @@ pub async fn api_reply(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn sse_handles_every_byte_boundary_utf8_comments_crlf_and_done() {
+        let input = ": heartbeat\r\ndata: {\"choices\":[{\"delta\":{\"content\":\"你好\"}}]}\r\n\r\ndata: [DONE]\r\n\r\n";
+        for boundary in 0..=input.len() {
+            let mut parser = Sse::default();
+            parser.feed(&input.as_bytes()[..boundary], false).unwrap();
+            parser.feed(&input.as_bytes()[boundary..], true).unwrap();
+            assert_eq!(parser.output, "你好");
+            assert!(parser.done);
+        }
+        let mut parser = Sse::default();
+        for byte in input.as_bytes() {
+            parser.feed(&[*byte], false).unwrap();
+        }
+        parser.feed(&[], true).unwrap();
+        assert_eq!(parser.output, "你好");
+    }
+    #[test]
+    fn sse_supports_multiline_data_finish_reason_and_cr_only() {
+        let mut parser = Sse::default();
+        parser.feed(b"event: message\rdata: {\rdata: \"choices\":[{\"delta\":{\"content\":\"hi\"},\"finish_reason\":\"stop\"}]}\r\r",true).unwrap();
+        assert_eq!(parser.output, "hi");
+        assert!(parser.finished);
+    }
+    #[test]
+    fn sse_rejects_truncation_provider_errors_bad_json_and_large_events() {
+        for input in [
+            "data: {}\n\n",
+            "data: invalid\n\n",
+            "data: {\"error\":{\"message\":\"fixture-private\"}}\n\n",
+            "data: [DONE]",
+        ] {
+            let error = Sse::default().feed(input.as_bytes(), true).unwrap_err();
+            assert!(!error.contains("fixture-private"));
+        }
+        assert!(Sse::default().feed(&vec![b'x'; 65537], false).is_err());
+    }
+    #[test]
+    fn never_exposes_credential_prefixes_across_stream_chunks() {
+        let key = "fixture-private-value";
+        for n in 1..key.len() {
+            assert_eq!(
+                safe_output(&format!("hello {}", &key[..n]), key, false),
+                "hello "
+            );
+        }
+        assert_eq!(
+            safe_output(&format!("hello {key}"), key, false),
+            "hello [REDACTED]"
+        );
+        assert_eq!(safe_output("hello f", key, true), "hello f");
+    }
     #[test]
     fn rejects_unsafe_configuration_without_echoing_input() {
         for url in [
@@ -201,8 +486,8 @@ mod tests {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let address = format!("http://{}", listener.local_addr().unwrap());
         let response = format!(
-            "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-            body.len()
+            "HTTP/1.1 {status}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+            if body.starts_with("data:") { "text/event-stream" } else { "application/json" }, body.len()
         );
         let task = std::thread::spawn(move || {
             let (mut socket, _) = listener.accept().unwrap();
@@ -262,7 +547,150 @@ mod tests {
             serde_json::from_str(request.split("\r\n\r\n").nth(1).unwrap()).unwrap();
         assert_eq!(body["model"], "fixture-model");
         assert_eq!(body["messages"][0]["content"], "test message");
-        assert_eq!(body["stream"], false);
+        assert_eq!(body["stream"], true);
+    }
+    #[tokio::test]
+    async fn transport_streams_and_redacts_before_callback() {
+        let (base_url, task)=mock_server("200 OK","data: {\"choices\":[{\"delta\":{\"content\":\"hello fixture-private\"}}]}\n\ndata: [DONE]\n\n");
+        let route = Route {
+            kind: "openai-compatible".into(),
+            base_url,
+            model: "chat".into(),
+            credential_ref: uuid::Uuid::new_v4().to_string(),
+        };
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let mut emitted = Vec::new();
+        let output = complete_messages(
+            &client,
+            &route,
+            "fixture-private",
+            &[Message {
+                role: "user".into(),
+                content: "hi".into(),
+            }],
+            |s| emitted.push(s),
+        )
+        .await
+        .unwrap();
+        assert_eq!(output, "hello [REDACTED]");
+        assert!(!emitted.is_empty());
+        assert!(emitted.iter().all(|s| !s.contains("fixture-private")));
+        task.join().unwrap();
+    }
+    #[tokio::test]
+    async fn streaming_callback_arrives_before_response_finishes() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        let (sent, observed) = std::sync::mpsc::channel();
+        let server = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            let mut request = [0u8; 4096];
+            assert!(socket.read(&mut request).unwrap() > 0);
+            socket.write_all(b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n").unwrap();
+            let first = "data: {\"choices\":[{\"delta\":{\"content\":\"first\"}}]}\n\n";
+            write!(socket, "{:x}\r\n{}\r\n", first.len(), first).unwrap();
+            socket.flush().unwrap();
+            observed.recv_timeout(Duration::from_secs(5)).unwrap();
+            let last =
+                "data: {\"choices\":[{\"delta\":{\"content\":\" second\"}}]}\n\ndata: [DONE]\n\n";
+            write!(socket, "{:x}\r\n{}\r\n0\r\n\r\n", last.len(), last).unwrap();
+        });
+        let route = Route {
+            kind: "openai-compatible".into(),
+            base_url,
+            model: "chat".into(),
+            credential_ref: uuid::Uuid::new_v4().to_string(),
+        };
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        let output = complete_messages(
+            &client,
+            &route,
+            "fixture-private",
+            &[Message {
+                role: "user".into(),
+                content: "hi".into(),
+            }],
+            |text| {
+                if text == "first" {
+                    let _ = sent.send(());
+                }
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(output, "first second");
+        server.join().unwrap();
+    }
+    #[tokio::test]
+    async fn explicit_stream_rejection_retries_json_only_at_same_endpoint() {
+        use std::io::{Read, Write};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let base_url = format!("http://{}", listener.local_addr().unwrap());
+        let server = std::thread::spawn(move || {
+            let mut requests = Vec::new();
+            for (status, body) in [
+                ("415 Unsupported Media Type", "stream unsupported"),
+                (
+                    "200 OK",
+                    r#"{"choices":[{"message":{"content":"JSON reply"}}]}"#,
+                ),
+            ] {
+                let (mut socket, _) = listener.accept().unwrap();
+                socket
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut bytes = Vec::new();
+                let mut buffer = [0u8; 4096];
+                loop {
+                    let n = socket.read(&mut buffer).unwrap();
+                    if n == 0 {
+                        break;
+                    }
+                    bytes.extend_from_slice(&buffer[..n]);
+                    if let Some(end) = bytes.windows(4).position(|w| w == b"\r\n\r\n") {
+                        let headers = String::from_utf8_lossy(&bytes[..end]).to_lowercase();
+                        let length = headers
+                            .lines()
+                            .find_map(|l| l.strip_prefix("content-length: "))
+                            .unwrap()
+                            .parse::<usize>()
+                            .unwrap();
+                        if bytes.len() >= end + 4 + length {
+                            break;
+                        }
+                    }
+                }
+                requests.push(String::from_utf8(bytes).unwrap());
+                write!(socket,"HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
+            }
+            requests
+        });
+        let route = Route {
+            kind: "openai-compatible".into(),
+            base_url,
+            model: "chat".into(),
+            credential_ref: uuid::Uuid::new_v4().to_string(),
+        };
+        let client = reqwest::Client::builder().no_proxy().build().unwrap();
+        assert_eq!(
+            complete(&client, &route, "fixture-private", "hi")
+                .await
+                .unwrap(),
+            "JSON reply"
+        );
+        let requests = server.join().unwrap();
+        assert!(requests
+            .iter()
+            .all(|r| r.starts_with("POST /chat/completions HTTP/1.1")));
+        for (i, request) in requests.iter().enumerate() {
+            let body: serde_json::Value =
+                serde_json::from_str(request.split("\r\n\r\n").nth(1).unwrap()).unwrap();
+            assert_eq!(body["stream"], i == 0);
+        }
     }
     #[tokio::test]
     async fn provider_errors_never_echo_response_body() {

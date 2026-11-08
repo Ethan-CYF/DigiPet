@@ -89,3 +89,51 @@ describe("API-only settings", () => {
     await expect(downloadModel("anything")).rejects.toThrow("API-only");
   });
 });
+it("adds routes atomically without changing active selection or enabling fallback", async () => {
+  const primary = {
+    kind: "openai-compatible" as const,
+    baseUrl: "https://primary.test/v1",
+    model: "chat",
+    credentialRef: "22222222-2222-4222-8222-222222222222",
+  };
+  vi.spyOn(credentialStore, "save").mockResolvedValue(ref);
+  const before = { completed: true, cloudConsent: true, route: primary };
+  saveSettings(before);
+  const next = await configureApi(
+    "https://fallback.test/v1",
+    "chat",
+    "fixture-secondary-key",
+    true,
+    before,
+  );
+  expect(next.activeRouteId).toBe(primary.credentialRef);
+  expect(next.fallbackEnabled).toBe(false);
+  expect(next.routes).toHaveLength(2);
+  expect(loadSettings()).toEqual(next);
+  expect(localStorage.getItem(SETTINGS_KEY)).not.toContain(
+    "fixture-secondary-key",
+  );
+});
+it("bounds context, timeout and retries and ignores unlisted secret fields in route lists", () => {
+  const route = {
+    kind: "openai-compatible" as const,
+    baseUrl: "https://provider.test",
+    model: "chat",
+    credentialRef: ref,
+    apiKey: "fixture-private",
+  };
+  const clean = safeSettings({
+    completed: true,
+    cloudConsent: true,
+    routes: [{ route, consent: false }],
+    fallbackEnabled: false,
+    contextWindow: 1000,
+    timeoutMs: 0,
+    retries: 50,
+  });
+  expect(clean.contextWindow).toBe(100);
+  expect(clean.timeoutMs).toBe(1000);
+  expect(clean.retries).toBe(2);
+  expect(clean.cloudConsent).toBe(false);
+  expect(JSON.stringify(clean)).not.toContain("fixture-private");
+});
