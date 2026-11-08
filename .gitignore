@@ -8,3 +8,5 @@ src-tauri/gen/
 
 playwright-report/
 test-results/
+
+tools-core/target/
