@@ -2,7 +2,10 @@ import { test, expect, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
-    localStorage.setItem("digipet.api.v1", JSON.stringify({ completed: true, cloudConsent: false }));
+    localStorage.setItem(
+      "digipet.api.v1",
+      JSON.stringify({ completed: true, cloudConsent: false }),
+    );
   });
 });
 const fixture = "tests/fixtures/two-cells.png";
@@ -40,7 +43,7 @@ test("single PNG crop, procedural movement, persistence, switch and delete", asy
   page.on("pageerror", (e) => crashes.push(e.message));
   await page.goto("/");
   await manager(page);
-  await page.getByLabel("Import PNG", { exact: true }).setInputFiles(fixture);
+  await page.getByLabel("Import PNG", { exact: true }).setInputFiles({name:"pet.bin",mimeType:"application/octet-stream",buffer:readFileSync(fixture)});
   await page.getByLabel("Crop width", { exact: true }).fill("4");
   await expect(
     page.getByText("Save appearance / 儲存外觀", { exact: true }),
@@ -186,15 +189,21 @@ test("a corrupt saved PNG restores the visible default and preserves original by
   ]);
   await page.goto("/");
   await page.evaluate(
-    (png) =>
+    ([png, healthy]) =>
       localStorage.setItem(
         "digipet.appearances.v1",
         JSON.stringify({
-          appearances: [{ id: "broken", name: "Broken", png }],
+          appearances: [
+            { id: "broken", name: "Broken", png },
+            { id: "healthy", name: "Healthy", png: healthy },
+          ],
           selected: "broken",
         }),
       ),
-    "data:image/png;base64," + corrupted.toString("base64"),
+    [
+      "data:image/png;base64," + corrupted.toString("base64"),
+      "data:image/png;base64," + source.toString("base64"),
+    ],
   );
   await page.reload();
   await manager(page);
@@ -208,5 +217,29 @@ test("a corrupt saved PNG restores the visible default and preserves original by
       ),
     )
     .toBe("broken");
+  await page.getByText("Settings / 設定", { exact: true }).click();
+  await page
+    .getByText("Backup & reset digipet.appearances.v1 / 備份並重設", {
+      exact: true,
+    })
+    .click();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        JSON.parse(
+          localStorage.getItem("digipet.appearances.v1")!,
+        ).appearances.map((a: any) => a.id),
+      ),
+    )
+    .toEqual(["healthy"]);
+  expect(
+    await page.evaluate(() =>
+      Object.keys(localStorage).some(
+        (k) =>
+          k.startsWith("digipet.appearances.v1.backup.") &&
+          localStorage.getItem(k)!.includes("broken"),
+      ),
+    ),
+  ).toBe(true);
   expect(crashes).toEqual([]);
 });

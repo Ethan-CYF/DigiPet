@@ -38,6 +38,8 @@ jobs:
           sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential pkg-config file libxdo-dev libx11-dev libayatana-appindicator3-dev librsvg2-dev patchelf xvfb dbus-x11 libdbus-1-dev
       - run: pnpm install --frozen-lockfile
       - run: cargo test --locked --manifest-path tools-core/Cargo.toml
+      - name: Repository credential-pattern scan
+        run: node scripts/check-secrets.mjs
       - run: pnpm build
       - name: Unit and interaction tests (mock APIs only)
         run: pnpm test

@@ -48,11 +48,19 @@ export function validateConfig(baseUrl: string, model: string) {
   return { baseUrl: url.toString().replace(/\/+$/, ""), model: model.trim() };
 }
 export function safeSettings(value: Settings): Settings {
-  if (!value || typeof value !== "object" || Array.isArray(value) ||
-      (value.version !== undefined && value.version !== 5)) return fail();
-  return { ...safeApiSettings(value), version: 5,
+  if (
+    !value ||
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    (value.version !== undefined && value.version !== 5)
+  )
+    return fail();
+  return {
+    ...safeApiSettings(value),
+    version: 5,
     openOnStartup: value.openOnStartup === true,
-    rememberConversation: value.rememberConversation !== false };
+    rememberConversation: value.rememberConversation !== false,
+  };
 }
 function safeApiSettings(value: Settings): Settings {
   if (value.routes) {

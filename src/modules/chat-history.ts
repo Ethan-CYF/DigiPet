@@ -20,8 +20,12 @@ export function openHistory(): Promise<IDBDatabase> {
       if (!request.result.objectStoreNames.contains("recovery"))
         request.result.createObjectStore("recovery", { autoIncrement: true });
     };
-    request.onblocked = () => reject(Error("Close other DigiPet windows / 請關閉其他視窗"));
-    request.onsuccess = () => { request.result.onversionchange = () => request.result.close(); resolve(request.result); };
+    request.onblocked = () =>
+      reject(Error("Close other DigiPet windows / 請關閉其他視窗"));
+    request.onsuccess = () => {
+      request.result.onversionchange = () => request.result.close();
+      resolve(request.result);
+    };
     request.onerror = () =>
       reject(new Error("History unavailable / 無法開啟歷史"));
   });
@@ -45,8 +49,9 @@ async function transaction<T>(
 }
 export const history = {
   list: async () => {
-    const rows: unknown[] = await transaction("readonly", s => s.getAll());
-    if (!rows.every(validConversation)) throw Error("History needs repair / 歷史需要修復");
+    const rows: unknown[] = await transaction("readonly", (s) => s.getAll());
+    if (!rows.every(validConversation))
+      throw Error("History needs repair / 歷史需要修復");
     return rows.sort((a, b) => b.updated - a.updated);
   },
   repair: async () => {
@@ -60,15 +65,21 @@ export const history = {
           const cursor = request.result;
           if (!cursor) return;
           if (!validConversation(cursor.value)) {
-            tx.objectStore("recovery").add({ key: cursor.primaryKey, value: cursor.value });
+            tx.objectStore("recovery").add({
+              key: cursor.primaryKey,
+              value: cursor.value,
+            });
             cursor.delete();
           }
           cursor.continue();
         };
         tx.oncomplete = () => resolve();
-        tx.onabort = tx.onerror = () => reject(Error("Backup/repair failed / 備份或修復失敗"));
+        tx.onabort = tx.onerror = () =>
+          reject(Error("Backup/repair failed / 備份或修復失敗"));
       });
-    } finally { db.close(); }
+    } finally {
+      db.close();
+    }
   },
   save: async (conversation: Conversation) => {
     // Explicit allowlist: no route, credential, or arbitrary object fields reach storage.
@@ -76,13 +87,11 @@ export const history = {
       id: conversation.id,
       title: redact(conversation.title).slice(0, 80),
       updated: Date.now(),
-      messages: conversation.messages
-        .slice(-500)
-        .map((m) => ({
-          role: m.role,
-          content: redact(m.content),
-          ...(m.status ? { status: m.status } : {}),
-        })),
+      messages: conversation.messages.slice(-500).map((m) => ({
+        role: m.role,
+        content: redact(m.content),
+        ...(m.status ? { status: m.status } : {}),
+      })),
     };
     if (JSON.stringify(safe).length > 2 * 1024 * 1024)
       throw new Error("Conversation too large / 對話過大");
@@ -93,12 +102,18 @@ export const history = {
   },
   clear: async () => {
     const db = await openHistory();
-    try { await new Promise<void>((resolve, reject) => {
-      const tx = db.transaction(["conversations", "recovery"], "readwrite");
-      tx.objectStore("conversations").clear(); tx.objectStore("recovery").clear();
-      tx.oncomplete = () => resolve();
-      tx.onabort = tx.onerror = () => reject(Error("History deletion failed / 無法刪除歷史"));
-    }); } finally { db.close(); }
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction(["conversations", "recovery"], "readwrite");
+        tx.objectStore("conversations").clear();
+        tx.objectStore("recovery").clear();
+        tx.oncomplete = () => resolve();
+        tx.onabort = tx.onerror = () =>
+          reject(Error("History deletion failed / 無法刪除歷史"));
+      });
+    } finally {
+      db.close();
+    }
   },
 };
 export function contextMessages(
@@ -120,15 +135,60 @@ export function contextMessages(
 function validConversation(row: unknown): row is Conversation {
   if (!row || typeof row !== "object") return false;
   const c = row as Conversation;
-  return typeof c.id === "string" && typeof c.title === "string" &&
-    Number.isFinite(c.updated) && Array.isArray(c.messages) && c.messages.length <= 500 &&
-    c.messages.every(m => m && ["user", "assistant"].includes(m.role) &&
-      typeof m.content === "string" &&
-      (m.status === undefined || ["complete", "stopped", "error"].includes(m.status)));
+  return (
+    typeof c.id === "string" &&
+    typeof c.title === "string" &&
+    Number.isFinite(c.updated) &&
+    Array.isArray(c.messages) &&
+    c.messages.length <= 500 &&
+    c.messages.every(
+      (m) =>
+        m &&
+        ["user", "assistant"].includes(m.role) &&
+        typeof m.content === "string" &&
+        (m.status === undefined ||
+          ["complete", "stopped", "error"].includes(m.status)),
+    )
+  );
 }
 
 /** Explicit export allowlist, also redacted by native keychain before download. */
 export function exportHistory(rows: Conversation[]): string {
-  return JSON.stringify(rows.map(c => ({ id: c.id, title: redact(c.title), updated: c.updated,
-    messages: c.messages.map(m => ({ role: m.role, content: redact(m.content), ...(m.status ? {status:m.status} : {}) })) })), null, 2);
+  return JSON.stringify(
+    rows.map((c) => ({
+      id: c.id,
+      title: redact(c.title),
+      updated: c.updated,
+      messages: c.messages.map((m) => ({
+        role: m.role,
+        content: redact(m.content),
+        ...(m.status ? { status: m.status } : {}),
+      })),
+    })),
+    null,
+    2,
+  );
+}
+
+export async function prepareHistoryExport(
+  rows: Conversation[],
+  scrub: (text: string) => Promise<string>,
+): Promise<string> {
+  const safe: Conversation[] = [];
+  for (const row of rows) {
+    const messages: HistoryMessage[] = [];
+    for (const m of row.messages)
+      messages.push({
+        role: m.role,
+        content: await scrub(m.content),
+        ...(m.status ? { status: m.status } : {}),
+      });
+    safe.push({
+      id: row.id,
+      updated: row.updated,
+      title: await scrub(row.title),
+      messages,
+    });
+  }
+  return exportHistory(safe);
 }

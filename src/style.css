@@ -234,3 +234,6 @@ button:disabled { opacity: .5; cursor: default; }
 /* Tool output and previews are rendered only as text. */
 .bubble pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; font-size: 11px; }
 .bubble [role="dialog"] { border: 2px solid #7867bd; padding: 8px; }
+.bubble [aria-label="Data and recovery"] { border-top: 1px solid #d6c9e5; margin-top: 8px; }
+.bubble [aria-label="Data and recovery"] button { margin: 3px 0; font-size: 11px; }
+.bubble [role="alertdialog"] { border: 2px solid #9b243c; padding: 8px; }
