@@ -6,7 +6,7 @@
 
 DigiPet 是 MIT 授權的開源桌面寵物 AI 助理，使用 **Tauri v2 + React + TypeScript（Vite）+ Rust + pnpm**。目標平台為 **Windows 與 Linux**。M1 延續 M0 桌面核心，加入七種動畫狀態、本機外觀庫、單圖裁切與程序動作、等格 PNG sprite sheet，以及位置與外觀還原。保留透明置頂、拖曳、stub 聊天、穿透、托盤與快捷鍵。
 
-M1 動畫與外觀已完成。**M2 加入首次啟動／設定精靈、安全憑證與 API 聊天**，支援 OpenAI 相容 API（例如 DeepSeek）。不整合 llama.cpp、Ollama 或本機模型下載。未設定或選擇略過時，傳送訊息仍只顯示本機 `(M0 stub) 收到：<text>`；不儲存對話。
+M1 動畫與外觀已完成。**M2 加入首次啟動／設定精靈、安全憑證與 API 聊天**，支援 OpenAI 相容 API（例如 DeepSeek）。不整合 llama.cpp、Ollama 或本機模型下載。**M3 加入 AI 串流對話與 Provider Router**。未設定或選擇略過時，仍保留本機 `(M0 stub) 收到：<text>`。
 
 ### 開發與執行
 
@@ -54,11 +54,21 @@ Linux 會產生 `.deb` 與 `.AppImage`；Windows 會產生 NSIS 安裝程式，�
 
 ### M2 API 設定與隱私
 
-首次啟動會開啟精靈；之後可點寵物 → **Settings / 設定**。輸入 HTTPS base URL（例如 `https://api.deepseek.com/v1`，程式會附加 `/chat/completions`）、模型 ID（例如 `deepseek-chat`）及 API key。勾選雲端同意後才可儲存。儲存不會測試連線或送出訊息；傳送聊天時才會把單則文字、模型 ID 與驗證金鑰送到所選供應商，可能產生費用並適用其隱私政策。按 **Stop / 停止** 取消本機請求；供應商可能已處理／計費。
+首次啟動會開啟精靈；之後可點寵物 → **Settings / 設定**。輸入 HTTPS base URL（例如 `https://api.deepseek.com/v1`，程式會附加 `/chat/completions`）、模型 ID（例如 `deepseek-chat`）及 API key。勾選雲端同意後才可儲存。儲存不會測試連線或送出訊息；傳送聊天時才會把設定的近期訊息、可選角色提示、模型 ID 與驗證金鑰送到所選供應商，可能產生費用並適用其隱私政策。按 **Stop / 停止** 取消本機請求；供應商可能已處理／計費。
 
-金鑰透過 MIT/Apache-2.0 相容的 Rust `keyring` 存於 Windows Credential Manager 或 Linux Secret Service；Linux 需要已解鎖的桌面金鑰庫（如 GNOME Keyring/KWallet Secret Service）與 session D-Bus。不可用時不會降級成明文儲存，可解鎖後重試或略過。webview localStorage 只保存完成狀態、同意、端點、模型及隨機 `credentialRef`。重啟後會還原；API key 不會回填至 UI。修改設定需重新輸入金鑰與同意。略過會停用 API，並嘗試刪除上一個金鑰；金鑰庫鎖定時可能需在 OS 金鑰庫手動清除舊項目。
+金鑰透過 MIT/Apache-2.0 相容的 Rust `keyring` 存於 Windows Credential Manager 或 Linux Secret Service；Linux 需要已解鎖的桌面金鑰庫（如 GNOME Keyring/KWallet Secret Service）與 session D-Bus。不可用時不會降級成明文儲存，可解鎖後重試或略過。webview localStorage 只保存完成狀態、同意、端點、模型、隨機 `credentialRef`、非祕密路由選項與角色提示。重啟後會還原；API key 不會回填至 UI。新增／替換端點需重新輸入金鑰與同意；既有路由可獨立撤回同意。停用 API 會嘗試刪除所有已設定金鑰；金鑰庫鎖定時可能需在 OS 金鑰庫手動清除舊項目。
 
-**Skip for now / 暫時略過** 保留 stub，不連網。只支援非串流單則聊天；不傳送歷史對話、不保存聊天。前端預覽沒有 OS 金鑰庫，無法保存真實 API 設定；使用 `pnpm tauri dev` 驗證原生流程。CI 只用假憑證與 loopback 假服務，不呼叫付費 API。設定精靈與外觀管理皆使用 360×640 視窗。
+**Skip for now / 暫時略過** 保留 stub，不連網。未設定時維持 M2 stub；已設定 API 的 M3 聊天功能見下節。前端預覽沒有 OS 金鑰庫，無法保存真實 API 設定；使用 `pnpm tauri dev` 驗證原生流程。CI 只用假憑證與 loopback 假服務，不呼叫付費 API。設定精靈與外觀管理皆使用 360×640 視窗。
+
+### M3 AI 對話與 Provider Router
+
+已設定 API 時，聊天使用 `stream=true` SSE，文字逐步出現在泡泡中；供應商直接回傳 JSON 也可處理。若端點以 HTTP 400／415／422 拒絕串流，僅向同一端點重試一次 `stream=false`。**Stop / 停止** 透過 AbortSignal 取消原生請求，保留部分回覆並標記「已停止」。寵物依序使用 thinking、talking、idle；錯誤短暫顯示 sad 後恢復 idle，可再次傳送。驗證、限流、模型及網路錯誤只顯示固定友善訊息，不顯示原始供應商錯誤內容。
+
+在 **Settings / 設定** 可新增最多 8 個 OpenAI 相容路由、選擇目前路由、獨立同意／撤回及移除供應商。每個新端點都需明確同意；M2 已保存的同意只沿用到原端點。**Enable fallback** 預設關閉，只有明確開啟後才會依設定順序嘗試其他已同意路由；絕不自動取得同意。僅連線／傳輸失敗、逾時、408／429／5xx 可重試或 fallback；驗證／模型／格式錯誤、使用者停止或已顯示部分回覆後不切換。預設每次嘗試逾時 60 秒、0 次重試；可設 1–120 秒、0–2 次重試。逾時涵蓋原生金鑰讀取、串流及同端點非串流相容性重試。
+
+對話存於此應用程式 WebView 的本機 **IndexedDB**（`digipet.chat.v1`），重啟仍保留。選單可列出／繼續對話；**New** 新增、**Delete** 刪除選取對話、**Clear all** 清空。停止或錯誤時保留部分回覆及狀態。每則對話最多保存最近 500 則訊息及 2 MiB JSON；超出或儲存失敗會顯示錯誤。未設定的 stub 不保存歷史。此資料庫不是金鑰庫，也不加密聊天內容；刪除是邏輯刪除，不保證磁碟安全抹除。
+
+預設傳送最近 20 則訊息，設定可改為 1–100 則，另可填 **Persona / 角色提示** 作為 system message。停止的部分回覆可進入後續 context。已設定金鑰會在 Rust 邊界內移除；常見 API key／Bearer／password 格式也會遮蔽，遮蔽後才顯示、保存及組裝 context。金鑰仍只存 OS 金鑰庫；讀取不可用時不會把未檢查的使用者文字寫入歷史。請勿在聊天分享其他密碼或敏感資訊；格式遮蔽無法辨識所有任意祕密。保存路由及撤回同意不會呼叫供應商。
 
 ### M1 外觀與動畫
 
@@ -80,20 +90,20 @@ Linux 會產生 `.deb` 與 `.AppImage`；Windows 會產生 NSIS 安裝程式，�
 | --- | --- |
 | M0 | 桌面視窗、像素寵物動畫、拖曳、stub 聊天、穿透、托盤、CI |
 | M1（完成） | 桌寵動畫與外觀：七狀態、單圖裁切／程序動作、sprite sheet、本機外觀管理、位置還原 |
-| M2（本次） | API 設定精靈、雲端同意、安全憑證、API router 與可停止的聊天；不下載模型 |
-| M3 | API 體驗改善：串流、連線診斷與供應商相容性 |
+| M2（完成） | API 設定精靈、雲端同意、OS 金鑰庫憑證與可停止的單則 API 聊天；不下載模型 |
+| M3（本次） | AI 對話與 Provider Router：SSE、停止、多路由、逐供應商同意、明確 fallback、本機歷史、context 與角色提示 |
 | M4 | 可選工具與使用者授權的助理動作 |
 | M5 | 可控的記憶、設定與隱私選項 |
 | M6 | Windows／Linux 相容性、效能、無障礙與測試 |
 | M7 | 穩定版本、文件、發行與社群貢獻流程 |
 
-架構決策：[0001-stack](docs/adr/0001-stack.md)、[0002-click-through](docs/adr/0002-click-through.md)、[0003-appearance](docs/adr/0003-appearance.md)、[0004-api-credentials](docs/adr/0004-api-credentials.md)。原有 [MIT LICENSE](LICENSE) 保留不變。
+架構決策：[0001-stack](docs/adr/0001-stack.md)、[0002-click-through](docs/adr/0002-click-through.md)、[0003-appearance](docs/adr/0003-appearance.md)、[0004-api-credentials](docs/adr/0004-api-credentials.md)、[0005-chat-router-history](docs/adr/0005-chat-router-history.md)。原有 [MIT LICENSE](LICENSE) 保留不變。
 
 ## English
 
 DigiPet is an **MIT-licensed open-source desktop pet AI assistant**, built with **Tauri v2, React, TypeScript, Vite, Rust and pnpm**, targeting **Windows and Linux only**. M1 extends the M0 desktop shell with seven animation states, a local appearance library, cropped single-image procedural motion, equal-cell PNG sprite sheets, and appearance/position restoration. Transparency, topmost, dragging, stub chat, click-through, tray and shortcuts remain available.
 
-M1 animation and appearance are complete. **M2 adds the first-run/settings wizard, secure credentials and API chat** through OpenAI-compatible endpoints such as DeepSeek. No llama.cpp, Ollama or local model downloads. When skipped or unset, chat still produces `(M0 stub) 收到：<text>` locally. Conversations are not persisted.
+M1 animation and appearance are complete. **M2 adds the first-run/settings wizard, secure credentials and API chat** through OpenAI-compatible endpoints such as DeepSeek. No llama.cpp, Ollama or local model downloads. When skipped or unset, chat still produces `(M0 stub) 收到：<text>` locally. **M3 adds streaming AI chat and a provider router.**
 
 ### Develop and build
 
@@ -141,11 +151,21 @@ Unsigned installers appear under `src-tauri/target/release/bundle/`: `.deb` and 
 
 ### M2 API setup and privacy
 
-First launch opens the wizard; reopen it via the pet → **Settings / 設定**. Enter an HTTPS base URL (e.g. `https://api.deepseek.com/v1`; the app appends `/chat/completions`), model ID (e.g. `deepseek-chat`) and API key. Explicit cloud consent enables Save. Saving makes no network request. Sending chat transmits the single message, model ID and authentication key to the chosen provider; its fees and privacy policy apply. **Stop / 停止** cancels the local request; the provider may already have processed/billed it.
+First launch opens the wizard; reopen it via the pet → **Settings / 設定**. Enter an HTTPS base URL (e.g. `https://api.deepseek.com/v1`; the app appends `/chat/completions`), model ID (e.g. `deepseek-chat`) and API key. Explicit cloud consent enables Save. Saving makes no network request. Sending chat transmits the configured recent context, optional persona, model ID and authentication key to the chosen provider; its fees and privacy policy apply. **Stop / 停止** cancels the local request; the provider may already have processed/billed it.
 
-Rust `keyring` (MIT/Apache-2.0 compatible) stores credentials in Windows Credential Manager or Linux Secret Service. Linux needs an unlocked desktop keychain (e.g. GNOME Keyring/KWallet Secret Service) and session D-Bus. Failure never falls back to plaintext; unlock and retry or skip. Webview localStorage holds only completion, consent, endpoint, model and random `credentialRef`, restored on restart. Keys are never returned to the UI. Editing requires re-entering the key and consent. Skip disables API and attempts to delete the previous key; if the keychain is locked, orphan entries may need removal in the OS keychain.
+Rust `keyring` (MIT/Apache-2.0 compatible) stores credentials in Windows Credential Manager or Linux Secret Service. Linux needs an unlocked desktop keychain (e.g. GNOME Keyring/KWallet Secret Service) and session D-Bus. Failure never falls back to plaintext; unlock and retry or skip. Webview localStorage holds only completion, consent, endpoints, models, random `credentialRef`, non-secret router preferences and persona, restored on restart. Keys are never returned to the UI. Adding/replacing endpoints requires a key and consent; existing routes allow independent consent revocation. Disable API attempts to delete all configured keys; if the keychain is locked, orphan entries may need removal in the OS keychain.
 
-**Skip for now / 暫時略過** keeps chat local and stubbed. M2 uses non-streaming, single-message chat; no conversation history is sent or persisted. Browser preview has no OS keychain and cannot save real API settings; use `pnpm tauri dev` for the native flow. CI uses fake credentials and loopback test servers, never paid APIs. Wizard and appearance manager use the 360×640 window.
+**Skip for now / 暫時略過** keeps chat local and stubbed. M2 introduced single-message API chat; M3 streaming and local history are described below. Browser preview has no OS keychain and cannot save real API settings; use `pnpm tauri dev` for the native flow. CI uses fake credentials and loopback test servers, never paid APIs. Wizard and appearance manager use the 360×640 window.
+
+### M3 AI chat and provider router
+
+Configured chat requests `stream=true` and renders SSE text progressively. JSON replies are also accepted. If a server rejects streaming with HTTP 400/415/422, it retries `stream=false` once at the same endpoint. **Stop** uses AbortSignal to cancel the native request and retains the partial reply marked stopped. Animation uses thinking → talking → idle; errors briefly use sad then return to idle, with Send available again. Authentication, rate-limit, model and network errors use fixed friendly messages, never raw provider error bodies.
+
+**Settings** supports up to eight OpenAI-compatible routes, active-route selection, individual consent/revocation, and removal. Each new endpoint needs explicit opt-in; migrated M2 consent applies only to its existing route. **Enable fallback** is off by default. When explicitly enabled, it tries other consented routes in configuration order. Connection/transport failures, timeouts and HTTP 408/429/5xx may retry or fall back. Authentication/model/format errors, cancellation and any visible partial output prevent retry/fallback. Defaults: 60-second attempt timeout, zero retries; configurable 1–120 seconds and 0–2 retries. The deadline covers native key retrieval, streaming and the same-endpoint non-streaming compatibility retry.
+
+Conversations persist in the app WebView's device-local **IndexedDB** (`digipet.chat.v1`) across restarts. Select a conversation to continue; **New**, **Delete**, and **Clear all** manage it. Stopped/failed partial replies retain their status. Each saved conversation is limited to its latest 500 messages and 2 MiB serialized JSON; storage errors are shown. Unconfigured stub chat does not save history. History is not encrypted or a credential store; deletion is logical, not guaranteed secure disk erasure.
+
+The default context is the last 20 messages, configurable from 1–100, plus an optional **Persona** system prompt. Stopped partial replies can enter subsequent context. Configured keys are scrubbed within Rust; common API-key/Bearer/password formats are also redacted before display, history and context assembly. Keys remain exclusively in the OS keychain. If key lookup fails, unchecked user text is not written to history. Avoid sharing unrelated passwords or sensitive data: pattern redaction cannot identify every arbitrary secret. Saving routes and revoking consent make no provider request.
 
 ### M1 appearance and animation
 
@@ -167,11 +187,11 @@ Click the pet, then **Appearance / 外觀**. Import, preview, switch, delete or 
 | --- | --- |
 | M0 | Desktop shell, pet animation, drag, stub chat, click-through, tray, CI |
 | M1 (done) | Pet animation and appearance: seven states, single-image crop/procedural motion, sprite sheets, local library, position restore |
-| M2 (this change) | API setup wizard, cloud consent, secure credentials, API router and cancellable chat; no model downloads |
-| M3 | API experience: streaming, connection diagnostics and provider compatibility |
+| M2 (done) | API setup wizard, cloud consent, OS keychain credentials and cancellable single-message API chat; no model downloads |
+| M3 (this change) | AI chat and provider router: SSE, Stop, multiple routes, per-provider consent, explicit fallback, local history, context and persona |
 | M4 | Optional tools and user-authorized assistant actions |
 | M5 | User-controlled memory, preferences and privacy |
 | M6 | Windows/Linux compatibility, performance, accessibility and testing |
 | M7 | Stable release, docs, distribution and contribution workflow |
 
-See [ADR 0001](docs/adr/0001-stack.md) and [ADR 0002](docs/adr/0002-click-through.md), and [ADR 0003](docs/adr/0003-appearance.md), and [ADR 0004](docs/adr/0004-api-credentials.md). The existing [MIT LICENSE](LICENSE) is unchanged.
+See [ADR 0001](docs/adr/0001-stack.md) and [ADR 0002](docs/adr/0002-click-through.md), and [ADR 0003](docs/adr/0003-appearance.md), and [ADR 0004](docs/adr/0004-api-credentials.md), and [ADR 0005](docs/adr/0005-chat-router-history.md). The existing [MIT LICENSE](LICENSE) is unchanged.

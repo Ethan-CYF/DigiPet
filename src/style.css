@@ -228,3 +228,6 @@ legend {
 .api-settings input[type=checkbox] { width: auto; }
 .api-settings p { max-height: none; }
 button:disabled { opacity: .5; cursor: default; }
+.bubble [role=status] { white-space: pre-wrap; }
+.api-settings input[type=radio] { width: auto; }
+.bubble::after { pointer-events: none; }
