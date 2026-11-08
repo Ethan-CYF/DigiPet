@@ -1,6 +1,6 @@
 import ToolPermissions from "./ToolPermissions";
 import { useState, type FormEvent } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
   configureApi,
   providerRoutes,
@@ -30,7 +30,7 @@ export default function ApiSettings({
     try {
       const prompt = draft.systemPrompt ?? "";
       const systemPrompt =
-        !prompt || prompt === (settings.systemPrompt ?? "")
+        !isTauri() || !prompt || prompt === (settings.systemPrompt ?? "")
           ? prompt
           : await invoke<string>("redact_chat_text", {
               text: draft.systemPrompt ?? "",
@@ -38,7 +38,7 @@ export default function ApiSettings({
                 (p) => p.route.credentialRef,
               ),
             });
-      saveSettings({ ...draft, routes: providerRoutes(draft), systemPrompt });
+      saveSettings({ ...draft, completed: true, routes: providerRoutes(draft), systemPrompt });
       done(loadSettings());
     } catch {
       setError(
@@ -54,7 +54,7 @@ export default function ApiSettings({
     try {
       let next: Settings;
       if (skip) {
-        next = { completed: true, cloudConsent: false };
+        next = { ...draft, routes: [], route: undefined, completed: true, cloudConsent: false };
         saveSettings(next);
       } else {
         next = await configureApi(
@@ -62,7 +62,7 @@ export default function ApiSettings({
           model,
           apiKey,
           consent,
-          adding ? draft : undefined,
+          draft,
         );
       }
       setApiKey("");
@@ -79,6 +79,10 @@ export default function ApiSettings({
   return (
     <section className="api-settings" aria-label="API setup">
       <ToolPermissions />
+      <label><input type="checkbox" aria-label="Open chat on startup" checked={draft.openOnStartup ?? false} onChange={e => setDraft({ ...draft, openOnStartup: e.target.checked })} />Open chat on startup / 啟動時開啟聊天</label>
+      <label><input type="checkbox" aria-label="Restore last conversation" checked={draft.rememberConversation !== false} onChange={e => setDraft({ ...draft, rememberConversation: e.target.checked })} />Restore last conversation / 還原上次對話</label>
+      <label>Persona / 角色提示<textarea aria-label="System prompt" maxLength={4000} value={draft.systemPrompt ?? ""} onChange={e => setDraft({ ...draft, systemPrompt: e.target.value })} /></label>
+      <button disabled={busy} onClick={() => void saveRouter()}>Save preferences / 儲存偏好</button>
       {providerRoutes(draft).length > 0 && !adding && (
         <section aria-label="Provider router">
           <h2>Providers / 供應商</h2>
@@ -207,17 +211,6 @@ export default function ApiSettings({
                 <option key={n}>{n}</option>
               ))}
             </select>
-          </label>
-          <label>
-            Persona / 角色提示
-            <textarea
-              aria-label="System prompt"
-              maxLength={4000}
-              value={draft.systemPrompt ?? ""}
-              onChange={(e) =>
-                setDraft({ ...draft, systemPrompt: e.target.value })
-              }
-            />
           </label>
           <button disabled={busy} onClick={() => void saveRouter()}>
             Save router / 儲存路由

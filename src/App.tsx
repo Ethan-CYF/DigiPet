@@ -1,3 +1,6 @@
+import { reportRecovery } from "./modules/recovery";
+import DataSettings from "./DataSettings";
+import LocalTools from "./LocalTools";
 import {
   backend,
   runTask,
@@ -74,7 +77,7 @@ export default function App() {
   }, [desktop]);
   const [settings, setSettings] = useState(loadSettings);
   const [settingUp, setSettingUp] = useState(!settings.completed);
-  const [open, setOpen] = useState(!settings.completed);
+  const [open, setOpen] = useState(!settings.completed || settings.openOnStartup === true);
   const pending = useRef<AbortController | null>(null);
   const [busy, setBusy] = useState(false);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -84,7 +87,7 @@ export default function App() {
   useEffect(() => {
     void history
       .list()
-      .then(setConversations)
+      .then(rows => { setConversations(rows); if (settings.rememberConversation !== false && rows[0]) selectConversation(rows[0]); })
       .catch(() => setHistoryError("History unavailable / 歷史不可用"));
   }, []);
   async function persist(next: Conversation) {
@@ -119,7 +122,7 @@ export default function App() {
   function changeState(state: PetState) {
     timers.current.forEach(clearTimeout);
     timers.current = [];
-    setAnimation((current) => transition(current, state, performance.now()));
+    setAnimation((current) => current.state === state ? current : transition(current, state, performance.now()));
   }
   function commit(next: Library) {
     try {
@@ -136,11 +139,9 @@ export default function App() {
     setError(message);
     const next = { ...library, selected: "default" };
     setLibrary(next);
-    try {
-      saveLibrary(next);
-    } catch {
-      /* In-memory default still recovers interaction. */
-    }
+    reportRecovery("digipet.appearances.v1");
+    // Keep the original for explicit backup/repair; only the visible selection falls back.
+
   }
   useEffect(
     () => () => {
@@ -149,6 +150,12 @@ export default function App() {
     },
     [],
   );
+  const [online, setOnline] = useState(navigator.onLine);
+  useEffect(() => {
+    const update = () => { setOnline(navigator.onLine); if (!navigator.onLine) pending.current?.abort(); };
+    window.addEventListener("online", update); window.addEventListener("offline", update);
+    return () => { window.removeEventListener("online", update); window.removeEventListener("offline", update); };
+  }, []);
   const [text, setText] = useState("");
   const [reply, setReply] = useState("你好！我是 DigiPet。");
   const [error, setError] = useState("");
@@ -287,6 +294,7 @@ export default function App() {
     event.preventDefault();
     const message = text.trim();
     if (!message || pending.current || busy || settingUp) return;
+    if (!online) { setError("Offline: chat requires a network provider. Local tools remain available. / 離線：聊天需要網路供應商，本機工具仍可使用。"); return; }
     changeState("thinking");
     setError("");
     setText("");
@@ -433,7 +441,7 @@ export default function App() {
         <section ref={bubble} className="bubble" aria-label="DigiPet chat">
           <header>
             <span>
-              DigiPet <small>M4</small>
+              DigiPet <small>M5</small>
             </span>
             <button aria-label="Close chat" onClick={() => setOpen(false)}>
               ×
@@ -459,6 +467,12 @@ export default function App() {
             </button>
           </div>
           {settingUp && (
+            <>
+            <AppearanceManager library={library} commit={commit} invalid={invalid} animation={animation} />
+            <DataSettings settings={settings} changed={() => {
+              setSettings(loadSettings()); setLibrary(loadLibrary()); selectConversation(null);
+              void history.list().then(setConversations).catch(() => setHistoryError("History unavailable / 歷史不可用"));
+            }} />
             <ApiSettings
               settings={settings}
               done={(next) => {
@@ -466,7 +480,10 @@ export default function App() {
                 setSettingUp(false);
               }}
             />
+            </>
           )}
+          {!online && <p role="status">Offline / 離線：聊天需連線，本機工具可用。</p>}
+          <LocalTools />
           <label className="state-control">
             狀態 / State
             <select
@@ -561,7 +578,7 @@ export default function App() {
               )}
             </section>
           )}
-          {historyError && <p className="error">{historyError}</p>}
+          {historyError && <p className="error">{historyError} — Settings → Backup & repair history / 設定 → 備份並修復歷史</p>}
           {desktop && (
             <label>
               <input
@@ -627,6 +644,8 @@ export default function App() {
           {error && (
             <p className="error" role="alert">
               {error}
+              <button onClick={() => { stop(); setError(""); changeState("idle"); }}>Reset provider task / 重設供應商工作</button>
+              <button onClick={() => setSettingUp(true)}>Recovery settings / 復原設定</button>
             </p>
           )}
         </section>

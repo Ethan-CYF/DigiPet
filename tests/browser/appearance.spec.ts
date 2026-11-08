@@ -172,7 +172,7 @@ test("sheet frame order, FPS, idle fallback, swapping and hostile config rejecti
   await expect(page.getByLabel("Import PNG", { exact: true })).toHaveCount(0);
 });
 
-test("a saved PNG that passes header checks but fails decoding restores the default without crashing", async ({
+test("a corrupt saved PNG restores the visible default and preserves original bytes for explicit repair", async ({
   page,
 }) => {
   const crashes: string[] = [];
@@ -207,6 +207,6 @@ test("a saved PNG that passes header checks but fails decoding restores the defa
           JSON.parse(localStorage.getItem("digipet.appearances.v1")!).selected,
       ),
     )
-    .toBe("default");
+    .toBe("broken");
   expect(crashes).toEqual([]);
 });
