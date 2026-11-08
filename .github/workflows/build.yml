@@ -51,9 +51,17 @@ jobs:
       - run: cargo check --locked --manifest-path src-tauri/Cargo.toml
       - run: cargo test --locked --manifest-path src-tauri/Cargo.toml
       - name: Build unsigned installers
+        shell: bash
         env:
           APPIMAGE_EXTRACT_AND_RUN: "1"
-        run: pnpm tauri build
+        run: |
+          set +e
+          pnpm tauri build 2>&1 | tee installer-build.log
+          result=${PIPESTATUS[0]}
+          if [ "$result" -ne 0 ]; then
+            node -e 'const fs = require("node:fs"); const tail = fs.readFileSync("installer-build.log", "utf8").replace(/\u001b\[[0-9;]*m/g, "").trim().split(/\r?\n/).slice(-35).join("\n"); console.log("::error title=Installer build failure::" + tail.replaceAll("%", "%25").replaceAll("\r", "%0D").replaceAll("\n", "%0A"));'
+          fi
+          exit "$result"
       - name: Linux X11 startup smoke
         if: runner.os == 'Linux'
         shell: bash
