@@ -1,5 +1,5 @@
-mod tools;
 mod api;
+mod tools;
 use serde::Deserialize;
 use std::{
     sync::Mutex,
@@ -149,7 +149,8 @@ fn resize_pet(window: WebviewWindow, expanded: bool, managing: bool) -> Result<(
     window
         .set_position(PhysicalPosition::new(
             old_position.x,
-            old_position.y
+            old_position
+                .y
                 .saturating_add(old_size.height as i32)
                 .saturating_sub(new_height as i32),
         ))
@@ -160,7 +161,10 @@ fn resize_pet(window: WebviewWindow, expanded: bool, managing: bool) -> Result<(
 
 // Only this fixed application-owned file is accessed. Pack data never reaches Rust.
 fn position_path(app: &tauri::AppHandle) -> Option<std::path::PathBuf> {
-    app.path().app_config_dir().ok().map(|p| p.join("position-v1.txt"))
+    app.path()
+        .app_config_dir()
+        .ok()
+        .map(|p| p.join("position-v1.txt"))
 }
 fn clamp_axis(value: i32, start: i32, extent: u32, size: u32) -> i32 {
     let end = (start as i64 + extent as i64 - size as i64)
@@ -191,8 +195,9 @@ fn recover_position(window: &WebviewWindow) -> Result<(), String> {
     let scale = window.scale_factor().map_err(|e| e.to_string())?;
     let monitors = window.available_monitors().map_err(|e| e.to_string())?;
     let anchor_x = p.x.saturating_add((100.0 * scale) as i32);
-    let anchor_y = p.y.saturating_add(size.height as i32)
-        .saturating_sub((80.0 * scale) as i32);
+    let anchor_y =
+        p.y.saturating_add(size.height as i32)
+            .saturating_sub((80.0 * scale) as i32);
     // Select by the pet anchor, not the expanded bubble's top-left corner.
     let Some(monitor) = monitors.iter().min_by_key(|m| {
         let origin = m.position();
@@ -207,10 +212,12 @@ fn recover_position(window: &WebviewWindow) -> Result<(), String> {
     };
     let origin = monitor.position();
     let bounds = monitor.size();
-    window.set_position(PhysicalPosition::new(
-        clamp_axis(p.x, origin.x, bounds.width, size.width),
-        clamp_axis(p.y, origin.y, bounds.height, size.height),
-    )).map_err(|e| e.to_string())
+    window
+        .set_position(PhysicalPosition::new(
+            clamp_axis(p.x, origin.x, bounds.width, size.width),
+            clamp_axis(p.y, origin.y, bounds.height, size.height),
+        ))
+        .map_err(|e| e.to_string())
 }
 
 fn restore_position(window: &WebviewWindow) {
@@ -226,9 +233,12 @@ fn restore_position(window: &WebviewWindow) {
                 if file.take(65).read_to_string(&mut text).is_ok() {
                     if let Some((x, bottom)) = parse_position(&text) {
                         let height = window.outer_size().map_err(|e| e.to_string())?.height;
-                        window.set_position(PhysicalPosition::new(
-                            x, bottom.saturating_sub(height as i32),
-                        )).map_err(|e| e.to_string())?;
+                        window
+                            .set_position(PhysicalPosition::new(
+                                x,
+                                bottom.saturating_sub(height as i32),
+                            ))
+                            .map_err(|e| e.to_string())?;
                     }
                 }
             }
@@ -303,7 +313,8 @@ pub fn run() {
             api::api_reply,
             api::stop_api_reply,
             api::api_tool_turn,
-            tools::tool_registry, tools::tool_grants, tools::tool_grant, tools::tool_revoke_folder,
+            tools::tool_registry,
+            tools::tool_repair, tools::tool_grants, tools::tool_grant, tools::tool_revoke_folder,
             tools::tool_run, tools::tool_confirm, tools::tool_cancel, tools::tool_reminders
         ])
         .setup(|app| {
