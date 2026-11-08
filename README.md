@@ -114,6 +114,28 @@ Windows 與 Linux CI 執行相同核心與端到端測試，Linux 固定 `ubuntu
 Push／PR CI 建置原生程式並測試；安裝包僅在手動 `workflow_dispatch` 建置，避免 NSIS／AppRun 外部下載影響工具驗收。
 權限模型見 [ADR 0006](docs/adr/0006-tool-permissions.md)。
 
+### M5 產品整合與安全加固
+
+**Settings / 設定** 整合供應商路由與同意、外觀與素材、工具與資料夾授權、
+角色提示、啟動時開啟聊天、還原上次對話，以及聊天歷史匯出／確認刪除全部。
+設定標記 `version: 5`；只遷移實際存在的 M2 單路由、M3／M4 多路由設定，
+先保留 `.pre-m5` 原始備份。M1 外觀與 M4 工具儲存格式維持相容。
+
+**Local tools (offline) / 本機工具（離線）** 可直接操作既有行事曆、日記與檔案搜尋，
+不需要 AI。仍受原有工具／資料夾授權與逐次寫入確認限制；離線聊天顯示需要網路。
+設定、外觀、歷史、行事曆、日記與授權跨重啟保留，不新增雲端同步或本機模型。
+
+供應商失敗可重設目前工作／開啟復原設定。設定、素材與歷史損壞時先保留原資料，
+再以 **Backup & repair / 備份並修復** 明確處理，保留可讀的健康資料；工具工作 panic
+可重新開啟持久狀態。整份工具檔無法解析時，備份後才重設該工具儲存區。
+圖片檢查 PNG 內容、CRC、尺寸、解壓縮中繼資料與影格配置；不依副檔名信任內容。
+
+驗證：`pnpm test`、`pnpm test:tools`、`pnpm test:browser`、`pnpm test:perf`，
+以及兩個 Rust crate 的 `cargo test --locked --manifest-path ...`。
+CI 執行 Windows 與 ubuntu-24.04；Linux 保留效能環境與實測 JSON artifact。
+詳見 [安全摘要](docs/security-notes.md) 與 [效能量測](docs/performance.md)。
+測試只使用 mock 供應商與 fixtures，無真實 API keys／付費呼叫。
+
 ### 路線圖（後續列為規劃）
 
 | 里程碑 | 範圍 |
@@ -122,8 +144,8 @@ Push／PR CI 建置原生程式並測試；安裝包僅在手動 `workflow_dispa
 | M1（完成） | 桌寵動畫與外觀：七狀態、單圖裁切／程序動作、sprite sheet、本機外觀管理、位置還原 |
 | M2（完成） | API 設定精靈、雲端同意、OS 金鑰庫憑證與可停止的單則 API 聊天；不下載模型 |
 | M3 | AI 對話與 Provider Router：SSE、停止、多路由、逐供應商同意、明確 fallback、本機歷史、context 與角色提示 |
-| M4（本次） | 五種 AI 工具與權限：schema、orchestrator、逐工具／資料夾授權、寫入預覽確認與本機稽核 |
-| M5 | 可控的記憶、設定與隱私選項 |
+| M4（完成） | 五種 AI 工具與權限：schema、orchestrator、逐工具／資料夾授權、寫入預覽確認與本機稽核 |
+| M5（本次） | 產品整合與安全加固：整合設定、實際舊格式遷移、備份復原、離線本機功能、圖片／權限測試與效能基準 |
 | M6 | Windows／Linux 相容性、效能、無障礙、簽章與 release pipeline |
 | M7 | 穩定版本、文件、發行與社群貢獻流程 |
 
@@ -248,6 +270,32 @@ pinned to `ubuntu-24.04`. Push/PR CI builds and tests native binaries; installer
 only on manual `workflow_dispatch`, keeping external NSIS/AppRun downloads out of tool acceptance.
 See [ADR 0006](docs/adr/0006-tool-permissions.md).
 
+### M5 integration and security hardening
+
+**Settings** consolidates provider routes/consent, appearance and packs, tool/folder
+grants, persona, opening chat at startup, restoring the last conversation, and
+history export/confirmed delete-all. Settings carry `version: 5`; only existing M2
+single-route and M3/M4 route-array formats migrate, preserving `.pre-m5` first.
+M1 appearance and M4 tool storage remain compatible.
+
+**Local tools (offline)** directly uses the existing calendar, journal and file
+search without AI. The same grants and per-write confirmation apply. Offline chat
+clearly requires a network provider. Settings, appearance, history, calendar,
+journal and grants persist across restart. No cloud sync or local model is added.
+
+Provider failures offer request reset/recovery settings. Damaged settings, packs and
+history retain originals until explicit backup/repair; readable healthy data is
+preserved. Backend task panics can reopen persisted state. A wholly unparseable
+tool file resets only that tool store after backup. PNG validation inspects bytes,
+CRCs, dimensions, compressed metadata and frame grids, independent of extensions.
+
+Run `pnpm test`, `pnpm test:tools`, `pnpm test:browser`, `pnpm test:perf` and
+`cargo test --locked --manifest-path ...` for both Rust crates. Windows and
+ubuntu-24.04 CI verify integration; Linux uploads measured performance/environment
+JSON artifacts. See [security notes](docs/security-notes.md) and
+[performance measurements](docs/performance.md). Mock providers/fixtures only:
+no real API keys or paid calls. Release publishing/signing remains M6.
+
 ### Roadmap (later milestones planned)
 
 | Milestone | Scope |
@@ -256,8 +304,8 @@ See [ADR 0006](docs/adr/0006-tool-permissions.md).
 | M1 (done) | Pet animation and appearance: seven states, single-image crop/procedural motion, sprite sheets, local library, position restore |
 | M2 (done) | API setup wizard, cloud consent, OS keychain credentials and cancellable single-message API chat; no model downloads |
 | M3 | AI chat and provider router: SSE, Stop, multiple routes, per-provider consent, explicit fallback, local history, context and persona |
-| M4 (this change) | AI tools & permissions: five tools, schemas, orchestrator, tool/folder grants, write previews/confirmation and local audit |
-| M5 | User-controlled memory, preferences and privacy |
+| M4 (done) | AI tools & permissions: five tools, schemas, orchestrator, tool/folder grants, write previews/confirmation and local audit |
+| M5 (this change) | Integration & security hardening: consolidated settings, actual-format migrations, backup/recovery, offline local tools, image/permission tests and measured performance |
 | M6 | Windows/Linux compatibility, performance, accessibility, signing and release pipeline |
 | M7 | Stable release, docs, distribution and contribution workflow |
 
