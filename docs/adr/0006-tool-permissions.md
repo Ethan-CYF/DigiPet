@@ -29,7 +29,7 @@ access outside the selected root. Local OS administrators and malicious same-acc
 processes that alter application storage or directory handles are outside this application
 boundary; the app does not provide an OS sandbox. Concurrent file edits are checked before
 writing, but this is not a cross-process transaction. Avoid simultaneous external editors
-while confirming a patch. M4 patches are whole-file replacement previews, not shell commands.
+while confirming a patch. M4 patches are whole-file replacements with a unified diff and exact before/after text, not shell commands.
 
 The orchestrator counts model turns and tool calls toward 12 steps (hard maximum 24),
 supports Stop during generation and approval, and clears previews on completion. Tool turns

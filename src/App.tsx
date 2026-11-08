@@ -587,6 +587,12 @@ export default function App() {
               <p>
                 Review the complete before/after change. / 確認完整變更內容。
               </p>
+              {preview.diff && (
+                <>
+                  <h3>Patch / 差異</h3>
+                  <pre>{preview.diff}</pre>
+                </>
+              )}
               <h3>Before / 原內容</h3>
               <pre>{preview.before || "(new / 新增)"}</pre>
               <h3>After / 新內容</h3>

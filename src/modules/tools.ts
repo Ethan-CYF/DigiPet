@@ -53,6 +53,7 @@ export interface Preview {
   target: string;
   before: string;
   after: string;
+  diff?: string;
 }
 export interface Grants {
   tools: ToolName[];

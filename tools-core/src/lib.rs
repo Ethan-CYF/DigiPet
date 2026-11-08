@@ -94,6 +94,7 @@ pub struct Preview {
     pub target: String,
     pub before: String,
     pub after: String,
+    pub diff: String,
 }
 struct Pending {
     preview: Preview,
@@ -105,6 +106,31 @@ pub struct Engine {
     pending: BTreeMap<String, Pending>,
     reminded: BTreeSet<String>,
     roots: BTreeMap<(String, PathBuf), cap_std::fs::Dir>,
+}
+/// A unified whole-file replacement: exact content is still shown beside this diff.
+fn unified_diff(before: &str, after: &str) -> String {
+    if before == after {
+        return String::new();
+    }
+    let old = before.lines().count();
+    let new = after.lines().count();
+    let mut diff = format!(
+        "--- before\n+++ after\n@@ -{},{} +{},{} @@\n",
+        if old == 0 { 0 } else { 1 },
+        old,
+        if new == 0 { 0 } else { 1 },
+        new
+    );
+    for (prefix, text) in [('-', before), ('+', after)] {
+        for line in text.split_inclusive('\n') {
+            diff.push(prefix);
+            diff.push_str(line);
+            if !line.ends_with('\n') {
+                diff.push_str("\n\\ No newline at end of file\n");
+            }
+        }
+    }
+    diff
 }
 fn denied_component(path: &Path) -> bool {
     path.components().any(|c| match c {
@@ -544,6 +570,7 @@ impl Engine {
             return err();
         }
         let token = uuid::Uuid::new_v4().to_string();
+        let diff = unified_diff(&before, &after);
         let preview = Preview {
             token: token.clone(),
             tool: name.into(),
@@ -553,6 +580,7 @@ impl Engine {
                 .unwrap_or_else(|| format!("local {name}")),
             before,
             after,
+            diff,
         };
         self.pending.insert(
             token,
@@ -1036,6 +1064,8 @@ mod tests {
         );
         let args = json!({"action":"patch","path":path,"text":"new"});
         let v = call(&mut f.engine, "coding", args.clone());
+        assert!(v["preview"]["diff"].as_str().unwrap().contains("-old\n"));
+        assert!(v["preview"]["diff"].as_str().unwrap().contains("+new\n"));
         assert_eq!(fs::read_to_string(&path).unwrap(), "old");
         fs::write(&path, "changed").unwrap();
         assert!(f
@@ -1176,6 +1206,16 @@ mod tests {
                 json!({"action":"patch","path":target,"text":"{}"})
             )
             .is_err());
+    }
+    #[test]
+    fn unified_diff_preserves_line_endings_and_marks_missing_final_newline() {
+        assert_eq!(
+            unified_diff("", "new\n"),
+            "--- before\n+++ after\n@@ -0,0 +1,1 @@\n+new\n"
+        );
+        let diff = unified_diff("old\r\n", "new");
+        assert!(diff.contains("-old\r\n+new\n\\ No newline at end of file\n"));
+        assert!(unified_diff("same", "same").is_empty());
     }
     #[test]
     fn ics_utf8_folding_escaping_and_unsupported_recurrence() {

@@ -60,6 +60,7 @@ test("mock native tools display exact write preview, require confirmation, and S
                 token: "ui-only-token",
                 tool: "report",
                 target: "allowed/report.md",
+                diff: "--- before\n+++ after\n@@ -1,1 +1,3 @@\n-Old report\n+# Daily\n+\n+Report body\n",
                 before: "Old report",
                 after: "# Daily\n\nReport body",
               },
@@ -83,6 +84,7 @@ test("mock native tools display exact write preview, require confirmation, and S
   const dialog = page.getByRole("dialog", { name: "Confirm tool write" });
   await expect(dialog).toBeVisible();
   await expect(dialog).toContainText("Old report");
+  await expect(dialog).toContainText("-Old report");
   await expect(dialog).toContainText("Report body");
   await expect(page.getByRole("status")).toContainText(
     "Awaiting write confirmation",

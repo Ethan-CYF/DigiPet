@@ -97,7 +97,7 @@ Linux 會產生 `.deb` 與 `.AppImage`；Windows 會產生 NSIS 安裝程式，�
   每事件每次執行提醒一次；重啟也會提醒已逾期事件。
 - **Report**：以對話填入標題與內文的簡單報告範本，輸出 Markdown 或跳脫 HTML 至允許資料夾。
 - **Journal**：依 `YYYY-MM-DD` 建立、列出、搜尋及編輯本機日記。
-- **Coding**：讀取允許專案檔、以對話解釋／建議、提出完整檔案替換的前後差異；不執行任意 shell。
+- **Coding**：讀取允許專案檔、以對話解釋／建議、提出完整檔案替換的 unified diff 與前後內容；不執行任意 shell。
 - **File Search**：在允許資料夾搜尋檔名及 UTF-8 內容，遵守 `.gitignore`；排除隱藏檔、二進位檔與
   超過 128 KiB 的檔案，最多走訪 10,000 個項目、回傳 50 筆結果及每筆 1,000 字元摘要。
 
@@ -226,7 +226,7 @@ both model turns and tool calls. Ungranted tools and paths are denied.
   into an allowed folder.
 - **Journal:** local daily entries (`YYYY-MM-DD`), list/search/edit.
 - **Coding:** read allowed project files, explain/suggest in conversation, and propose a
-  complete file replacement with before/after preview. No arbitrary shell execution.
+  complete file replacement with a unified diff and before/after preview. No arbitrary shell execution.
 - **File Search:** filenames and UTF-8 contents inside allowed folders, respecting `.gitignore`,
   skipping hidden/binary files and files over 128 KiB. Bounded to 10,000 entries, 50 matches,
   and 1,000-character excerpts.
