@@ -16,9 +16,10 @@ artifacts，不建立 tag 或 GitHub Release。尚未完成的人工測試不代
 
 1. 按[安裝與 SHA-256 指引](docs/install.md)核對並安裝適合平台的檔案。
    Windows 需要 WebView2；Linux 以 Ubuntu 24.04 x64 為 CI 基準，需要 WebKitGTK 4.1／GTK 3 等依賴。
-2. 首次啟動會以原生 **Allow / Not now** 對話框詢問 DigiPet 本機行事曆／日記授權，
-   並顯示 API 設定精靈。這兩個工具只使用 DigiPet 本機資料，沒有系統日曆整合或相應 OS 授權。
-   檔案工具仍須在 Settings → Local tool access 逐工具使用系統資料夾選擇器授權。可選 **Skip for now / 暫時略過** 保留本機 stub：
+2. 首次啟動顯示 API 設定精靈；Calendar／Journal 只使用 DigiPet 本機 JSON，首次安裝及
+   升級會預設啟用，不顯示授權對話框。Settings → Local tool access 可逐工具開關，
+   之後的關閉選擇會保留。檔案工具預設拒絕，需使用系統資料夾選擇器選擇允許資料夾。
+   可選 **Skip for now / 暫時略過** 保留本機 stub：
    `(M0 stub) 收到：<text>`；這不是 AI 或本機模型，也不會呼叫供應商。
 3. 要用 API，填寫供應商的 **HTTPS base URL**（程式附加 `/chat/completions`）、
    **model ID** 和 **API key**，閱讀並勾選 **Cloud consent**，再按 **Save / 儲存**。
@@ -29,7 +30,8 @@ artifacts，不建立 tag 或 GitHub Release。尚未完成的人工測試不代
 5. 點寵物開關輕量聊天泡泡，Escape 關閉；平常關閉時只顯示透明背景的寵物。
    滑過寵物顯示 Chat／Appearance／Settings 輪盤，移開、Escape 或點外面會收起。
    亦可按齒輪、右鍵／聚焦後按 `Ctrl+,` 開啟獨立管理面板。
-   **Settings / 設定** 管理 API、同意、偏好、資料及工具權限；外觀、對話和工具各有入口。
+   **Settings / 設定** 管理 API、同意、偏好、資料及工具權限；外觀、對話和工具各有入口。所有外觀控制（選擇、PNG 上傳、類型、還原、刪除、上傳提示）
+   及設定均只在次要介面，聊天泡泡不包含這些控制。
    不要在聊天或問題回報貼出金鑰。
 
 完整步驟、疑難排解及資料界線見[雙語使用者指南](docs/user-guide.md)。
@@ -41,8 +43,8 @@ artifacts，不建立 tag 或 GitHub Release。尚未完成的人工測試不代
   全域快捷鍵及位置還原。托盤、置頂、DPI、多螢幕及合成效果需實體桌面驗證。
 - **API 對話：** 串流、停止、最多 8 個供應商路由、逐端點同意；fallback 預設關閉。
   本機 IndexedDB 保存對話，支援繼續、刪除、清空和 JSON 匯出；stub 不保存聊天歷史。
-- **工具與權限：** Calendar、Report、Journal、Coding、File Search 預設拒絕。
-  在 Tool permissions 逐工具啟用，檔案工具另選允許資料夾；管理面板 → Tools & state 勾選 AI tools。
+- **工具與權限：** Calendar／Journal 預設啟用，可在設定關閉；Report、Coding、File Search
+  預設拒絕，需在 Tool permissions 選擇允許資料夾才啟用；管理面板 → Tools & state 勾選 AI tools。
   每次工具資料寫入先顯示 Before / After，必須確認才會執行。
   沒有任意 shell 執行；選取檔案內容及工具結果可能傳至 API。
 - **Pet packs／外觀庫：** 只指現有 PNG 單圖裁切／程序動畫及等格 PNG sprite sheet + JSON 匯入。
@@ -116,10 +118,11 @@ Outstanding manual checks must not be read as passed.
 
 1. Follow the [install and SHA-256 guide](docs/install.md). Windows needs WebView2;
    Linux CI targets Ubuntu 24.04 x64 and requires WebKitGTK 4.1/GTK 3 and host libraries.
-2. First launch shows a native **Allow / Not now** dialog for DigiPet's local Calendar
-   and Journal, plus the API wizard. These tools use app-owned data, with no OS-calendar
-   integration or corresponding OS permission. File tools still need per-tool access
-   through the system folder picker in Settings → Local tool access. **Skip for now / 暫時略過** keeps the
+2. First launch opens the API wizard. Calendar and Journal use DigiPet-owned local
+   JSON and default on for fresh installs and upgrades without an access prompt.
+   Settings → Local tool access keeps per-tool on/off toggles; later off choices persist.
+   File tools default denied until you select an allowed folder with the OS folder picker.
+   **Skip for now / 暫時略過** keeps the
    local `(M0 stub) 收到：<text>` response. This is a fixed stub, with no model or provider call.
 3. For API chat, enter the provider's **HTTPS base URL** (DigiPet appends
    `/chat/completions`), **model ID** and **API key**. Read and check **Cloud consent**,
@@ -134,7 +137,9 @@ Outstanding manual checks must not be read as passed.
    Use the gear,
    right-click, or press `Ctrl+,` while focused to open the separate controls panel.
    **Settings** manages APIs, consent, preferences, data and tool permissions;
-   Appearance, Conversations and Tools & state have their own controls.
+   Appearance, Conversations and Tools & state have their own controls. All appearance
+   controls (selection, PNG upload, type, restore, delete and prompt tips) and all settings
+   remain in this secondary surface, never inside the chat bubble.
    Never paste credentials into chat or issue reports.
 
 See the [bilingual User Guide](docs/user-guide.md) for steps, data boundaries and troubleshooting.
@@ -148,9 +153,9 @@ See the [bilingual User Guide](docs/user-guide.md) for steps, data boundaries an
 - **API chat:** streaming, Stop, up to eight routes, per-endpoint consent; fallback
   is off by default. IndexedDB stores resumable conversations with delete/clear/JSON
   export. Stub conversations are not persisted.
-- **Tools and permissions:** Calendar, Report, Journal, Coding and File Search are
-  denied by default. Enable each in Tool permissions and grant folders separately
-  for file access; check AI tools in the controls panel → Tools & state. Every tool data write requires a
+- **Tools and permissions:** Calendar and Journal default on and can be turned off in
+  Settings. Report, Coding and File Search default denied until an allowed folder is
+  selected in Tool permissions; check AI tools in the controls panel → Tools & state. Every tool data write requires a
   Before / After preview and confirmation. No arbitrary shell execution. Selected
   file content and tool results may be sent to the API.
 - **Pet packs / appearance library:** existing PNG crop/procedural animation or

@@ -3,7 +3,7 @@ use digipet_tools::{Engine, Grants};
 use serde_json::Value;
 use std::sync::Mutex;
 use tauri::Manager;
-use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
+use tauri_plugin_dialog::DialogExt;
 #[derive(Default)]
 pub struct Tools(pub Mutex<Option<Engine>>);
 fn engine<T>(
@@ -45,60 +45,33 @@ fn protected<T>(
     }
 }
 
-// This is a DigiPet permission decision shown by the native desktop dialog.
-// Calendar and Journal use app-owned JSON, not the OS calendar/contact stores.
-// There is no Windows/Linux OS-calendar permission API for these local tools.
-static ACCESS_SETUP: Mutex<()> = Mutex::new(());
-
-#[tauri::command]
-pub async fn tool_access_setup(app: tauri::AppHandle, force: bool) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || {
-        let _setup = ACCESS_SETUP.lock().map_err(|_| "Access setup unavailable")?;
-        let directory = app.path().app_config_dir().map_err(|_| "Storage unavailable")?;
-        let path = directory.join("local-tool-access-v1.txt");
-        if !force {
-            if let Ok(file) = std::fs::File::open(&path) {
-                use std::io::Read;
-                let mut saved = String::new();
-                file.take(32).read_to_string(&mut saved).map_err(|_| "Access setup unavailable")?;
-                if matches!(saved.as_str(), "allowed" | "deferred") { return Ok("reviewed".into()); }
-            }
-        }
-        let missing = engine(&app, &app.state::<Tools>(), |e| {
-            if e.has_pending_writes() { return Err("Resolve pending writes before changing access".into()); }
-            let grants = e.grants();
-            Ok(["calendar", "journal"].into_iter().filter(|tool| !grants.tools.contains(*tool)).collect::<Vec<_>>())
-        })?;
-        let allowed = if missing.is_empty() && !force {
-            true
-        } else {
-            let mut dialog = app.dialog().message(
-                "Allow DigiPet's local Calendar and Journal tools?\nThese store records only in DigiPet's own local data, not your system calendar. Every write still needs a separate preview and confirmation. File tools stay denied until you choose allowed folders in Settings → Local tool access.\n\n允許 DigiPet 本機行事曆及日記工具？資料只存於 DigiPet 本機資料，不存取系統日曆。每次寫入仍須預覽確認；檔案工具需在設定 → 本機工具授權選擇允許資料夾。"
-            ).title("DigiPet — Local tool access / 本機工具授權")
-             .buttons(MessageDialogButtons::OkCancelCustom("Allow / 允許".into(), "Not now / 暫不允許".into()));
-            if let Some(window) = app.get_webview_window("main") { dialog = dialog.parent(&window); }
-            dialog.blocking_show()
-        };
-        if allowed {
-            engine(&app, &app.state::<Tools>(), |e| {
-                if e.has_pending_writes() { return Err("Resolve pending writes before changing access".into()); }
-                for tool in missing { e.grant(tool, true, None)?; }
-                Ok(())
-            })?;
-        }
-        let status = if allowed { "allowed" } else { "deferred" };
-        std::fs::create_dir_all(&directory).map_err(|_| "Access setup could not be saved")?;
-        let temporary = path.with_extension("tmp");
-        std::fs::write(&temporary, status).map_err(|_| "Access setup could not be saved")?;
-        std::fs::rename(temporary, path).map_err(|_| "Access setup could not be saved")?;
-        Ok(status.into())
-    }).await.map_err(|_| "Access setup failed; retry in Settings")?
-}
-
 #[tauri::command]
 pub fn tool_registry() -> Value {
     digipet_tools::registry()
 }
+fn change_grant(
+    e: &mut Engine,
+    tool: &str,
+    enabled: bool,
+    folder: Option<std::path::PathBuf>,
+) -> Result<(), String> {
+    if e.has_pending_writes() {
+        return Err("Resolve pending writes before changing access".into());
+    }
+    if enabled
+        && ["report", "coding", "file_search"].contains(&tool)
+        && folder.is_none()
+        && !e
+            .grants()
+            .folders
+            .get(tool)
+            .is_some_and(|folders| !folders.is_empty())
+    {
+        return Err("Choose an allowed folder before enabling this file tool".into());
+    }
+    e.grant(tool, enabled, folder)
+}
+
 #[tauri::command]
 pub async fn tool_grants(app: tauri::AppHandle) -> Result<Grants, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -131,10 +104,7 @@ pub async fn tool_grant(
             None
         };
         engine(&handle, &handle.state::<Tools>(), |e| {
-            if e.has_pending_writes() {
-                return Err("Resolve pending writes before changing access".into());
-            }
-            e.grant(&tool, enabled, folder)
+            change_grant(e, &tool, enabled, folder)
         })
     })
     .await
@@ -234,6 +204,35 @@ pub async fn tool_repair(app: tauri::AppHandle) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn ui_file_grants_require_a_folder_and_permission_changes_preserve_pending_approval() {
+        let root = std::env::temp_dir().join(format!("digipet-access-{}", uuid::Uuid::new_v4()));
+        let folder = root.join("project");
+        std::fs::create_dir_all(&folder).unwrap();
+        let mut engine = Engine::open(root.join("data")).unwrap();
+        for tool in ["report", "coding", "file_search"] {
+            assert!(change_grant(&mut engine, tool, true, None).is_err());
+            assert!(!engine.grants().tools.contains(tool));
+        }
+        let pending = engine.run("calendar", serde_json::json!({"action":"create","title":"Review first","text":"body","date":"20261109T090000Z"})).unwrap();
+        assert!(change_grant(&mut engine, "report", true, Some(folder.clone())).is_err());
+        assert!(engine.has_pending_writes());
+        engine
+            .confirm(pending["preview"]["token"].as_str().unwrap(), false)
+            .unwrap();
+        change_grant(&mut engine, "report", true, Some(folder.clone())).unwrap();
+        assert!(
+            engine.grants().folders["report"].contains(&std::fs::canonicalize(&folder).unwrap())
+        );
+        change_grant(&mut engine, "calendar", false, None).unwrap();
+        drop(engine);
+        assert!(!Engine::open(root.join("data"))
+            .unwrap()
+            .grants()
+            .tools
+            .contains("calendar"));
+        std::fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn task_and_initialization_panics_are_recoverable_without_losing_persisted_grants() {
         let path = std::env::temp_dir().join(format!("digipet-panic-{}", uuid::Uuid::new_v4()));

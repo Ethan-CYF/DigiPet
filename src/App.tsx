@@ -92,28 +92,6 @@ export default function App() {
   const pending = useRef<AbortController | null>(null);
   const [busy, setBusy] = useState(false);
   const [localWritePending, setLocalWritePending] = useState(false);
-  const [accessBusy, setAccessBusy] = useState(desktop);
-  const [accessStatus, setAccessStatus] = useState("");
-  async function requestAccess(force: boolean) {
-    setAccessBusy(true);
-    try {
-      const status = await invoke<string>("tool_access_setup", { force });
-      setAccessStatus(status ?? "");
-      if (status === "deferred") {
-        openControls();
-        setSettingsPage("access");
-      }
-    } catch {
-      setAccessStatus("error");
-      openControls();
-      setSettingsPage("access");
-    } finally {
-      setAccessBusy(false);
-    }
-  }
-  useEffect(() => {
-    if (desktop) void requestAccess(false);
-  }, [desktop]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [current, setCurrent] = useState<Conversation | null>(null);
   const currentRef = useRef<Conversation | null>(null);
@@ -425,14 +403,7 @@ export default function App() {
   async function send(event: FormEvent) {
     event.preventDefault();
     const message = text.trim();
-    if (
-      !message ||
-      pending.current ||
-      busy ||
-      settingUp ||
-      accessBusy ||
-      localWritePending
-    )
+    if (!message || pending.current || busy || settingUp || localWritePending)
       return;
     if (!online) {
       setError(
@@ -735,45 +706,21 @@ export default function App() {
                   本機資料，不存取系統日曆，因此沒有對應的系統日曆權限提示。
                 </p>
                 <p>
-                  The native Allow dialog grants DigiPet tool access. File
-                  access uses the system folder picker below. Every write still
-                  requires approval. / 原生允許對話框授予 DigiPet
-                  工具存取；檔案存取使用下方的系統資料夾選擇器。每次寫入仍須確認。
+                  Calendar and Journal are enabled by default on fresh install
+                  and upgrade, without a prompt. Turn either off below; your
+                  choice persists. File tools stay denied until you choose an
+                  allowed folder with the OS picker. Every write still needs
+                  preview and confirmation. /
+                  首次安裝及升級預設啟用行事曆與日記，不顯示授權提示；可在下方關閉並保存選擇。檔案工具需使用系統選擇器指定允許資料夾；每次寫入仍須預覽確認。
                 </p>
-                {accessStatus === "deferred" && (
-                  <p role="status">
-                    Not allowed yet — choose tools below or request access
-                    again. / 尚未允許，可在下方授權或重新要求存取。
-                  </p>
-                )}
-                {accessStatus === "allowed" && (
-                  <p role="status">
-                    Initial access reviewed. Current grants are listed below. /
-                    已完成首次存取審閱，目前授權如下。
-                  </p>
-                )}
-                {accessStatus === "error" && (
-                  <p role="alert">
-                    Access setup failed. Retry or use Data & recovery if local
-                    storage is damaged. /
-                    授權失敗，請重試；若本機儲存損壞可使用資料與復原。
-                  </p>
-                )}
-                <button
-                  disabled={!desktop || accessBusy || busy || localWritePending}
-                  onClick={() => void requestAccess(true)}
-                >
-                  Request local access again / 重新要求本機存取
-                </button>
                 {!settings.completed && (
                   <button onClick={() => setSettingsPage("api")}>
                     Continue API setup / 繼續 API 設定
                   </button>
                 )}
                 <ToolPermissions
-                  key={`${accessStatus}-${accessBusy}`}
                   expanded
-                  disabled={accessBusy || busy || localWritePending}
+                  disabled={busy || localWritePending}
                 />
               </section>
             )}
@@ -906,7 +853,7 @@ export default function App() {
           </label>
           <LocalTools
             pendingChanged={setLocalWritePending}
-            accessBusy={accessBusy || busy}
+            disabled={busy}
             openAccess={() => {
               openControls();
               setSettingsPage("access");
@@ -995,7 +942,7 @@ export default function App() {
               onChange={(e) => setText(e.target.value)}
             />
             <button
-              disabled={busy || settingUp || accessBusy || localWritePending}
+              disabled={busy || settingUp || localWritePending}
               type="submit"
               aria-label="Send message"
             >

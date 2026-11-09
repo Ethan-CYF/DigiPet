@@ -5,11 +5,11 @@ import { backend, type Preview, type ToolArgs } from "./modules/tools";
 export default function LocalTools({
   pendingChanged,
   openAccess,
-  accessBusy = false,
+  disabled = false,
 }: {
   pendingChanged?: (pending: boolean) => void;
   openAccess?: () => void;
-  accessBusy?: boolean;
+  disabled?: boolean;
 }) {
   const [tool, setTool] = useState<"calendar" | "journal" | "file_search">(
     "calendar",
@@ -103,7 +103,7 @@ export default function LocalTools({
         </label>
       ))}
       <button
-        disabled={accessBusy || busy || !!preview || !isTauri()}
+        disabled={disabled || busy || !!preview || !isTauri()}
         onClick={() => void run()}
       >
         Run locally / 本機執行

@@ -284,3 +284,76 @@ test("hover wheel selects focused surfaces and dismisses on leave, Escape and ou
   await page.mouse.click(220, 190);
   await expect(wheel).toBeHidden();
 });
+
+test("all appearance controls and settings stay in the secondary surface", async ({
+  page,
+}) => {
+  await page.goto("/");
+  const panel = page.getByLabel("DigiPet controls / 管理面板", { exact: true });
+  await page.getByLabel(controlsLabel).click();
+  await panel
+    .getByRole("button", { name: "Appearance / 外觀", exact: true })
+    .click();
+  const appearance = panel.getByLabel("Appearance Manager", { exact: true });
+  for (const label of ["Current appearance", "Import PNG", "Import type"]) {
+    await expect(appearance.getByLabel(label, { exact: true })).toBeVisible();
+  }
+  await expect(
+    appearance.getByRole("button", {
+      name: "Restore default / 還原",
+      exact: true,
+    }),
+  ).toBeVisible();
+  await expect(
+    appearance.getByRole("button", { name: "Delete / 刪除", exact: true }),
+  ).toBeVisible();
+  await expect(appearance.getByText(/上傳提示 \/ Prompt tips/)).toBeVisible();
+  expect(await appearance.evaluate((e) => !!e.closest(".secondary"))).toBe(
+    true,
+  );
+  await panel
+    .getByRole("button", { name: "Settings / 設定", exact: true })
+    .click();
+  for (const name of [
+    "API & preferences / API 與偏好",
+    "Local tool access / 本機工具授權",
+    "Data & recovery / 資料與復原",
+    "Updates / 更新",
+  ]) {
+    await panel.getByRole("button", { name, exact: true }).click();
+    expect(
+      await panel
+        .locator("input, select, textarea")
+        .evaluateAll((nodes) => nodes.every((e) => !!e.closest(".secondary"))),
+    ).toBe(true);
+  }
+  await panel
+    .getByRole("button", {
+      name: "Local tool access / 本機工具授權",
+      exact: true,
+    })
+    .click();
+  await expect(
+    panel.getByRole("button", { name: /Request local access again/ }),
+  ).toHaveCount(0);
+  await expect(
+    panel.getByRole("region", {
+      name: "Local tool access / 本機工具授權",
+      exact: true,
+    }),
+  ).toContainText("without a prompt");
+  await panel.getByRole("button", { name: "Chat / 聊天", exact: true }).click();
+  const bubble = page.getByLabel("DigiPet chat", { exact: true });
+  await expect(bubble).toBeVisible();
+  await expect(
+    bubble.locator(
+      'select, input[type="file"], input[type="checkbox"], .appearance-manager, .api-settings',
+    ),
+  ).toHaveCount(0);
+  await expect(bubble).not.toContainText(
+    /Prompt tips|Restore default|Delete|Current appearance|Local tool access|API.*preferences/,
+  );
+  await expect(
+    page.getByLabel("Appearance Manager", { exact: true }),
+  ).toHaveCount(0);
+});

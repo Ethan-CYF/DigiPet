@@ -83,6 +83,8 @@ pub struct Record {
 }
 #[derive(Clone, Default, Deserialize, Serialize)]
 struct Saved {
+    #[serde(default)]
+    local_defaults_applied: bool,
     grants: Grants,
     calendar: Vec<Record>,
     journal: Vec<Record>,
@@ -247,12 +249,31 @@ impl Engine {
     pub fn open(dir: PathBuf) -> Result<Self> {
         fs::create_dir_all(&dir).map_err(|_| "Storage unavailable")?;
         let path = dir.join("tools-v1.json");
-        let saved: Saved = if path.exists() {
+        let mut saved: Saved = if path.exists() {
             serde_json::from_str(&fs::read_to_string(path).map_err(|_| "Storage unavailable")?)
                 .map_err(|_| "Invalid storage")?
         } else {
             Saved::default()
         };
+        // Apply once to fresh and legacy stores. Later explicit off choices survive restarts.
+        let migrate_defaults = !saved.local_defaults_applied;
+        if migrate_defaults {
+            saved
+                .grants
+                .tools
+                .extend(["calendar".into(), "journal".into()]);
+            for tool in ["report", "coding", "file_search"] {
+                if !saved
+                    .grants
+                    .folders
+                    .get(tool)
+                    .is_some_and(|folders| !folders.is_empty())
+                {
+                    saved.grants.tools.remove(tool);
+                }
+            }
+            saved.local_defaults_applied = true;
+        }
         let mut roots = BTreeMap::new();
         for (tool, folders) in &saved.grants.folders {
             for folder in folders {
@@ -265,13 +286,17 @@ impl Engine {
                 }
             }
         }
-        Ok(Self {
+        let engine = Self {
             dir,
             saved,
             pending: BTreeMap::new(),
             reminded: BTreeSet::new(),
             roots,
-        })
+        };
+        if migrate_defaults {
+            engine.save()?;
+        }
+        Ok(engine)
     }
     /// UI-only explicit repair. Preserve every deserializable component, backup before replacing.
     pub fn repair(dir: PathBuf) -> Result<()> {
@@ -283,6 +308,7 @@ impl Engine {
         let bytes = fs::read(&path).map_err(|_| "Backup unavailable")?;
         let value: Value = serde_json::from_slice(&bytes).unwrap_or(Value::Null);
         let saved = Saved {
+            local_defaults_applied: value["local_defaults_applied"].as_bool().unwrap_or(false),
             grants: serde_json::from_value(value["grants"].clone()).unwrap_or_default(),
             calendar: value["calendar"]
                 .as_array()
@@ -897,6 +923,79 @@ mod tests {
         }
     }
     #[test]
+    fn fresh_local_defaults_still_require_preview_and_confirmation_for_every_write() {
+        let mut f = fixture();
+        assert_eq!(
+            f.engine.grants().tools,
+            BTreeSet::from(["calendar".into(), "journal".into()])
+        );
+        assert!(f.engine.grants().folders.is_empty());
+        for (tool, date) in [("calendar", "20261109T090000Z"), ("journal", "2026-11-09")] {
+            let args = json!({"action":"create","title":"Preview first","text":"body","date":date});
+            let preview = call(&mut f.engine, tool, args.clone());
+            assert_eq!(
+                call(&mut f.engine, tool, json!({"action":"list"}))["untrusted_data"],
+                json!([])
+            );
+            assert!(preview["preview"]["after"]
+                .as_str()
+                .unwrap()
+                .contains("Preview first"));
+            f.engine
+                .confirm(preview["preview"]["token"].as_str().unwrap(), false)
+                .unwrap();
+            assert_eq!(
+                call(&mut f.engine, tool, json!({"action":"list"}))["untrusted_data"],
+                json!([])
+            );
+            let preview = call(&mut f.engine, tool, args);
+            confirm(&mut f.engine, &preview);
+            assert_eq!(
+                call(&mut f.engine, tool, json!({"action":"list"}))["untrusted_data"]
+                    .as_array()
+                    .unwrap()
+                    .len(),
+                1
+            );
+        }
+    }
+    #[test]
+    fn legacy_upgrade_applies_defaults_once_preserves_data_and_honors_later_off_choices() {
+        let mut f = fixture();
+        let file = f.engine.dir.join("tools-v1.json");
+        let folder = fs::canonicalize(&f.root).unwrap();
+        let record = json!({"id":"kept","title":"Keep","text":"original","date":"2026-11-09"});
+        fs::write(
+            &file,
+            serde_json::to_vec(&json!({
+                "grants":{"tools":["report", "file_search"],"folders":{"report":[folder]}},
+                "calendar":[record.clone()],"journal":[record]
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        f.engine = Engine::open(f.engine.dir.clone()).unwrap();
+        assert!(f.engine.saved.local_defaults_applied);
+        assert_eq!(
+            f.engine.grants().tools,
+            BTreeSet::from(["calendar".into(), "journal".into(), "report".into()])
+        );
+        assert!(f.engine.grants().folders["report"].contains(&folder));
+        assert_eq!(f.engine.saved.calendar[0].text, "original");
+        assert_eq!(f.engine.saved.journal[0].text, "original");
+        for tool in ["calendar", "journal"] {
+            f.engine.grant(tool, false, None).unwrap();
+        }
+        f.engine = Engine::open(f.engine.dir.clone()).unwrap();
+        assert!(!f.engine.grants().tools.contains("calendar"));
+        assert!(!f.engine.grants().tools.contains("journal"));
+        Engine::repair(f.engine.dir.clone()).unwrap();
+        f.engine = Engine::open(f.engine.dir.clone()).unwrap();
+        assert!(!f.engine.grants().tools.contains("calendar"));
+        assert!(!f.engine.grants().tools.contains("journal"));
+        assert_eq!(f.engine.saved.journal[0].text, "original");
+    }
+    #[test]
     fn repair_backs_up_bytes_and_preserves_healthy_records_and_grants() {
         let mut f = fixture();
         grant(&mut f, "journal");
@@ -1025,8 +1124,10 @@ mod tests {
         .is_err());
     }
     #[test]
-    fn deny_by_default_and_tool_scoped_folder_grants() {
+    fn local_defaults_and_tool_scoped_folder_grants() {
         let mut f = fixture();
+        assert!(f.engine.run("calendar", json!({"action":"list"})).is_ok());
+        f.engine.grant("calendar", false, None).unwrap();
         assert!(f.engine.run("calendar", json!({"action":"list"})).is_err());
         grant(&mut f, "coding");
         fs::write(f.root.join("a.txt"), "safe").unwrap();

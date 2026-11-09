@@ -18,6 +18,9 @@ fn main() {
                 Some("grant") => engine
                     .grant(tool, true, Some(root.join("project")))
                     .map(|_| json!({})),
+                Some("toggle_local") if ["calendar", "journal"].contains(&tool) => engine
+                    .grant(tool, v["enabled"].as_bool().ok_or("Missing enabled")?, None)
+                    .map(|_| json!({})),
                 Some("grants") => Ok(json!(engine.grants())),
                 Some("run") => engine.run(tool, v["args"].clone()),
                 Some("confirm") => engine.confirm(

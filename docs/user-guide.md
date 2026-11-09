@@ -12,11 +12,13 @@ beta 準備工作，並不表示已公開發行。請先閱讀[安裝、SHA-256 
 確認可信來源及校驗碼後，由使用者決定是否安裝，受管理裝置可能禁止執行。
 Windows 需要 WebView2；Linux 需 WebKitGTK 4.1、GTK 3 及相關系統依賴。
 
-首次啟動先以原生 **Allow / 允許**／**Not now / 暫不允許** 對話框詢問 DigiPet
-行事曆及日記工具授權，並在管理面板開啟 API 設定精靈。這兩個工具只讀寫自己的本機
-JSON，不存取 OS 日曆或帳戶，因此沒有 Windows／Linux 系統日曆權限可要求。
-拒絕後不會靜默啟用；Settings → **Local tool access / 本機工具授權** 可重新要求存取。
-檔案工具保持拒絕，逐工具按 **Choose allowed folder** 才開啟系統資料夾選擇器。
+Calendar／Journal 只使用 DigiPet 自己的本機 JSON，不存取 OS 日曆或帳戶；首次安裝及
+升級會預設啟用，不顯示 Local tool access 原生授權對話框，也沒有重新要求授權流程。
+Settings → **Local tool access / 本機工具授權** 保留逐工具開關；首次遷移後，使用者
+關閉 Calendar／Journal 的選擇會在重啟及資料修復後保留。既有資料與已選擇的資料夾授權保留。
+Report／Coding／File Search 預設拒絕，需逐工具使用 **Choose allowed folder** 或開啟
+開關時的系統資料夾選擇器指定允許資料夾；取消不會啟用。每次資料寫入仍須完整預覽及確認。
+首次 API 設定精靈仍在管理面板顯示，可略過。
 滑過寵物會顯示 Chat／Appearance／Settings 輪盤；離開、Escape 或點外面收起，拖曳時隱藏。
 之後滑過寵物按齒輪、右鍵點寵物，或聚焦後按
 `Ctrl+,` → **Settings / 設定** 可重新開啟。平常關閉時只有透明背景的寵物；點寵物
@@ -80,6 +82,7 @@ JSON，不存取 OS 日曆或帳戶，因此沒有 Windows／Linux 系統日曆�
 
 ### Pet packs：現有外觀庫及匯入
 
+所有外觀選擇、PNG 上傳、類型、還原、刪除及上傳提示只在次要介面，不會出現在聊天泡泡。
 點 **Appearance / 外觀**（亦可從輪盤開啟），匯入後預覽並儲存套用；可切換、
 刪除本機副本及還原預設，來源檔案不受影響。最多 8 個外觀，使用 WebView localStorage 保存。
 
@@ -158,12 +161,15 @@ warnings are expected. Verify the source and checksum before deciding to install
 managed devices may prohibit unsigned software. Windows needs WebView2; Linux needs
 WebKitGTK 4.1, GTK 3 and host dependencies.
 
-First launch proactively shows a native **Allow / Not now** dialog for DigiPet's local
-Calendar and Journal, and the API wizard in the controls panel. These tools use their
-own local JSON, not OS calendars/accounts, so there is no corresponding Windows/Linux
-OS-calendar permission to request. Declining keeps access denied. Settings → **Local
-tool access** can request it again. File tools remain denied until you explicitly use
-**Choose allowed folder** for each tool; this opens the system folder picker.
+Calendar and Journal use DigiPet-owned local JSON, not OS calendars/accounts. They
+are enabled by default on fresh installs and upgrades without a native access dialog
+or re-prompt flow. Settings → **Local tool access** keeps per-tool on/off toggles.
+After the one-time migration, turning either tool off persists across restart and repair.
+Existing records and previously chosen folder grants are preserved. Report, Coding and
+File Search remain denied until you choose an allowed folder in the system folder picker,
+including when switching a file tool on; cancelling does not enable it. Every data write
+still requires the full preview and confirmation. The first-run API wizard remains in
+the controls panel and can be skipped.
 Hovering the pet shows a compact Chat / Appearance / Settings wheel. Leaving, Escape,
 or clicking outside dismisses it; dragging hides it.
  Hover the pet for the gear,
@@ -211,7 +217,7 @@ content; redaction cannot reliably detect arbitrary unknown secrets.
 
 ### Tools and permissions
 
-Settings → **Local tool access** → **Tool permissions** enables tools individually. File access also needs
+Settings → **Local tool access** → **Tool permissions** turns individual tools on/off; Calendar/Journal default on. File access also needs
 **Choose allowed folder** for each tool. Revoke folders or entire tools there.
 Check **AI tools** in the controls panel → **Tools & state** to let the consented provider propose operations.
 Tool turns are nonstreaming and still honor route consent and Stop. Every tool
@@ -235,6 +241,8 @@ about 1 MiB and excludes content, paths and keys.
 
 ### Pet packs: existing appearance library/import
 
+All appearance controls (selection, PNG upload, type, restore, delete and prompt tips)
+and all settings stay in the secondary surface, never in the chat bubble.
 Open **Appearance** (also available from the wheel), import, preview and save/apply.
 Select, delete local copies or restore defaults without modifying source files.
 At most eight appearances persist in WebView localStorage.

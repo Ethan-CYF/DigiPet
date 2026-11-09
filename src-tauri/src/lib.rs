@@ -325,7 +325,6 @@ pub fn run() {
             api::api_reply,
             api::stop_api_reply,
             api::api_tool_turn,
-            tools::tool_access_setup,
             tools::tool_registry,
             tools::tool_repair, tools::tool_grants, tools::tool_grant, tools::tool_revoke_folder,
             tools::tool_run, tools::tool_confirm, tools::tool_cancel, tools::tool_reminders

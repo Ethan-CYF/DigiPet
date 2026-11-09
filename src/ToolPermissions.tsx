@@ -35,9 +35,11 @@ export default function ToolPermissions({
     <details open={expanded || undefined}>
       <summary>Tool permissions / 工具權限</summary>
       <p>
-        Denied by default. Selected file contents may be sent to your consented
-        API provider. Every write requires a preview and confirmation. /
-        預設拒絕，選取檔案內容可能傳送至已同意的 API；每次寫入需預覽確認。
+        Calendar and Journal default on. File tools require an allowed folder.
+        Selected file contents may be sent to your consented API provider. Every
+        write requires a preview and confirmation. /
+        行事曆及日記預設開啟，檔案工具需選擇允許資料夾；選取內容可能傳送至已同意的
+        API，每次寫入仍需預覽確認。
       </p>
       {TOOL_NAMES.map((tool) => (
         <div key={tool}>
@@ -46,7 +48,13 @@ export default function ToolPermissions({
               type="checkbox"
               checked={grants.tools.includes(tool)}
               disabled={disabled || busy || !isTauri()}
-              onChange={(e) => void change(tool, e.target.checked, false)}
+              onChange={(e) =>
+                void change(
+                  tool,
+                  e.target.checked,
+                  e.target.checked && !["calendar", "journal"].includes(tool),
+                )
+              }
             />
             {tool}
           </label>

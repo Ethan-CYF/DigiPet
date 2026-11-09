@@ -36,8 +36,7 @@ try {
   if ($app.MainWindowHandle -eq 0) { throw 'No application window found' }
   'PASS: unsigned per-user silent install and native window launch' | Add-Content $evidence
   if (!(Test-Path (Join-Path $installDir 'uninstall.exe'))) { throw 'Successful install is missing uninstall.exe' }
-  # Enumerate real HWNDs: owned native dialogs are not reliably exposed as
-  # desktop children in UI Automation on the unattended Windows runner.
+  # Inspect native windows directly; first launch must have no tool-access dialog.
   Add-Type -TypeDefinition @'
 using System;
 using System.Collections.Generic;
@@ -47,10 +46,8 @@ public static class DigiPetNativeSmoke {
   public sealed class WindowInfo { public IntPtr Handle; public string Title; }
   private delegate bool EnumProc(IntPtr handle, IntPtr parameter);
   [DllImport("user32.dll")] private static extern bool EnumWindows(EnumProc callback, IntPtr parameter);
-  [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr parent, EnumProc callback, IntPtr parameter);
   [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr handle, out uint processId);
   [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr handle, StringBuilder title, int size);
-  [DllImport("user32.dll", SetLastError = true)] private static extern bool PostMessageW(IntPtr handle, uint message, IntPtr wParam, IntPtr lParam);
   private static string Title(IntPtr handle) { var text = new StringBuilder(1024); GetWindowText(handle, text, text.Capacity); return text.ToString(); }
   public static WindowInfo[] ForProcess(int processId) {
     var result = new List<WindowInfo>();
@@ -61,50 +58,41 @@ public static class DigiPetNativeSmoke {
     }, IntPtr.Zero);
     return result.ToArray();
   }
-  public static IntPtr Button(IntPtr parent, string caption) {
-    IntPtr result = IntPtr.Zero;
-    EnumChildWindows(parent, (handle, parameter) => {
-      if (Title(handle) == caption) { result = handle; return false; }
-      return true;
-    }, IntPtr.Zero);
-    return result;
-  }
-  public static void Click(IntPtr button) {
-    if (!PostMessageW(button, 0x00F5, IntPtr.Zero, IntPtr.Zero)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
-  }
+
 }
 '@
-  $deadline = (Get-Date).AddSeconds(20)
-  $accessDialog = $null
-  do {
-    $nativeWindows = [DigiPetNativeSmoke]::ForProcess($app.Id)
-    foreach ($window in $nativeWindows) {
+  function Assert-LocalDefaults {
+    foreach ($window in [DigiPetNativeSmoke]::ForProcess($app.Id)) {
       if ($window.Title -like '*DigiPet M6*') { throw 'Stale M6 window title' }
-      if ($window.Title -like '*Local tool access*') { $accessDialog = $window }
+      if ($window.Title -like '*Local tool access*') { throw 'Unexpected native tool-access dialog' }
     }
-    if (!$accessDialog) { Start-Sleep -Milliseconds 250 }
-  } while (!$accessDialog -and (Get-Date) -lt $deadline)
-  foreach ($window in $nativeWindows) { "Native CI window: $($window.Title)" | Add-Content $evidence }
-  if (!$accessDialog) {
-    $accessMarker = Join-Path $dataDirs[0] 'local-tool-access-v1.txt'
-    if (Test-Path $accessMarker) { "Access marker: $(Get-Content $accessMarker)" | Add-Content $evidence }
-    Get-Content $evidence
-    throw 'Missing native first-run DigiPet tool-access prompt'
+    $grantsFile = Join-Path $dataDirs[1] 'tools/tools-v1.json'
+    if (!(Test-Path $grantsFile)) { throw 'Local tool defaults were not initialized' }
+    $toolsData = Get-Content -Raw $grantsFile | ConvertFrom-Json
+    if (!$toolsData.local_defaults_applied) { throw 'Default migration was not persisted' }
+    if ('calendar' -notin $toolsData.grants.tools -or 'journal' -notin $toolsData.grants.tools) { throw 'Calendar/Journal should default on without a prompt' }
+    foreach ($tool in @('report', 'coding', 'file_search')) {
+      if ($tool -in $toolsData.grants.tools) { throw 'File tool enabled without choosing a folder' }
+    }
+    return $toolsData
   }
-  $allow = [DigiPetNativeSmoke]::Button($accessDialog.Handle, 'Allow / 允許')
-  if ($allow -eq [IntPtr]::Zero) { throw 'Native access prompt has no Allow control' }
-  [DigiPetNativeSmoke]::Click($allow)
-  $accessFile = Join-Path $dataDirs[0] 'local-tool-access-v1.txt'
+  $fresh = Assert-LocalDefaults
+  'PASS: fresh launch has no access dialog; Calendar/Journal default on and file tools stay denied' | Add-Content $evidence
+  # Model an existing installation, including a previous Not now marker; migration
+  # must not depend on that removed prompt or lose existing local records.
+  Stop-Process -Id $app.Id -Force
+  $app.WaitForExit()
+  $legacy = @{ grants = @{ tools = @(); folders = @{} }; calendar = @(@{ id = 'ci-kept'; title = 'CI upgrade record'; text = 'keep'; date = '20261109T090000Z' }); journal = @() }
   $grantsFile = Join-Path $dataDirs[1] 'tools/tools-v1.json'
-  $deadline = (Get-Date).AddSeconds(15)
-  while ((!(Test-Path $accessFile) -or !(Test-Path $grantsFile)) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
-  if (!(Test-Path $accessFile) -or (Get-Content $accessFile) -ne 'allowed') { throw 'Native Allow decision was not persisted' }
-  $toolsData = Get-Content -Raw $grantsFile | ConvertFrom-Json
-  if ('calendar' -notin $toolsData.grants.tools -or 'journal' -notin $toolsData.grants.tools) { throw 'Native Allow did not grant local calendar/journal' }
-  foreach ($tool in @('report', 'coding', 'file_search')) {
-    if ($tool -in $toolsData.grants.tools) { throw 'First-run access silently enabled file tools' }
-  }
-  'PASS: native first-run Allow grants only app-local calendar/journal; file tools remain denied' | Add-Content $evidence
+  $legacy | ConvertTo-Json -Depth 8 | Set-Content -Encoding utf8 $grantsFile
+  Set-Content (Join-Path $dataDirs[0] 'local-tool-access-v1.txt') 'deferred'
+  $app = Start-Process -FilePath $exe -PassThru
+  Start-Sleep -Seconds 8
+  $app.Refresh()
+  if ($app.HasExited) { throw 'Upgrade launch exited early' }
+  $upgraded = Assert-LocalDefaults
+  if ($upgraded.calendar[0].title -ne 'CI upgrade record') { throw 'Upgrade lost a local record' }
+  'PASS: upgrade enables local defaults without prompting and preserves existing records' | Add-Content $evidence
 
 } catch {
   "FAIL: $($_.Exception.Message)" | Add-Content $evidence
