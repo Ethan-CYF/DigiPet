@@ -75,3 +75,47 @@ resets the current request without resetting settings, history or permissions.
 檔若無法解析，備份後只重設該工具儲存區；無法開啟的 IndexedDB 不會被自動刪除。
 備份可能含私人資訊，只留本機，不會匯出；歷史匯出在 JSON 跳脫前逐欄位遮蔽
 已設定金鑰，再進行格式遮蔽。測試僅用 mock、fixture 與本機工具，無真實 API 金鑰或付費呼叫。
+
+## M7 scoped security audit / M7 範圍內安全審查
+
+Reviewed 2026-11-09 (JST), starting at M6 merge `312f362`. The M5 history above is
+preserved. This pass reviews existing boundaries and regressions; it is not an
+independent penetration test, OS sandbox proof or dependency/supply-chain certification.
+M7 保留以上 M5 歷史；以下只就已審查的程式路徑及測試作結論，不代表整個系統絕對安全。
+
+### Scope and evidence / 範圍及證據
+
+| Area / 範圍 | Inspected paths and result / 檢查及結果 |
+| --- | --- |
+| Permission-controlled writes | `tools-core/src/lib.rs`, `src-tauri/src/tools.rs`, `src/modules/tools.ts`, tool UI. Five-name registry/schema prevents model control commands; default-deny grants, per-tool folders, one-use UI preview tokens, revalidation, capability-relative atomic writes. Existing traversal, junction/symlink, stale/replay, revoke and injection regressions retained. No confirmed bypass found in reviewed paths. |
+| API/keychain data flow | `api.rs`, `model-wizard.ts`, `ai-router.ts`, ApiSettings/App. HTTPS URL validation; credentials bound to endpoint/model in native storage; explicit per-route consent and fallback; redirects disabled; fixed error codes and bounded replies. No real keychain accessed in this audit. |
+| History/export/redaction | `chat-history.ts`, `redaction.ts`, DataSettings and native redaction/SSE/tool response code. Allowlisted export, native credential scrubbing before JSON escaping, bounded whole UTF-8 fields; keychain-read failure refuses export. Existing split-secret/escaped-key/export regressions cover fake inputs. |
+| Audit/application logs | Tool audit uses timestamp/tool/fixed outcome codes and rotation; denied tool errors do not echo input to model. Native UI warnings cover desktop operations. No confirmed logging of API credential values or raw provider error bodies in reviewed production paths. |
+| CI logs/permissions | `.github/workflows/build.yml`, release scripts, credential scanner and test fixtures. Build/PR jobs have `contents: read`; only the pre-existing tag-event draft job has write permissions, unreachable from M7 branch pushes. No custom secrets or signing credentials required. Build failure tails contain compiler/bundler output; provider tests use fake values only. |
+| Update network traffic | `updates.rs`, UpdateNotice/App. Fixed GitHub HTTPS metadata endpoint, no Authorization/chat/local files/device ID, redirect refusal, 256 KiB bound and 5-second timeout. M7 removes the startup request: only an explicit Settings click sends a query. Opening a release page is a second user action; browser/GitHub may observe ordinary network metadata. |
+
+Cloud evidence: frontend 100 tests; release guards/integrity 5 tests; tools-core 22
+Rust tests (including property cases); mock-model/real-Rust integration 6 tests;
+Chromium 10 browser tests. Credential-pattern scan passed, reporting no matched
+values. Native Tauri execution in Cloud is blocked by missing GObject/GTK/WebKit
+system development prerequisites; native tests/installer validation are assigned
+to the existing Windows/ubuntu-24.04 CI jobs, with final-head status recorded in
+the task report. Browser tests use mock IPC and do not establish real keychain behavior.
+雲端原生測試受系統開發依賴限制；不能把瀏覽器 mock 當作真實金鑰庫或實體裝置驗證。
+
+### Findings and status / 發現及狀態
+
+| ID | Severity / 等級 | Finding / 發現 | Status / 狀態 |
+| --- | --- | --- | --- |
+| M7-01 (M6 carry-over) | **P2 (unchanged)** | Successful Windows install without uninstall.exe silently skipped uninstall/registry/data checks. / 成功安裝但缺少卸載程式會跳過驗證。 | **Fixed**: explicit throw; Windows child-process negative fixture must exit non-zero for this error after successful simulated install/launch. Actual installer smoke still checks executable removal, HKCU cleanup and disposable sentinels. |
+| M7-02 | P2 | Startup metadata query contradicted manual-check-only decision. / 啟動查詢不符合只准手動檢查的決策。 | **Fixed**: Settings click only; regression proves no startup request, explicit query/open and silent failures. No unrelated updater features added. |
+| M7-03 | P2 residual | Consented tools intentionally send granted folder roots, selected file contents/results and local calendar/journal text to the provider. Path filters cannot classify all sensitive files; grants are not an OS sandbox. / 授權內容可能含私人資訊。 | **Documented**: review grants, avoid sensitive folders; no confirmed unauthorized destination/write bypass found in this pass. |
+| M7-04 | P2 residual | Local chat/tool data, recovery copies and exported JSON are unencrypted; unknown secrets are not universally redactable. Uninstall may leave keychain entries and exports. / 本機資料不加密，任意秘密未必能遮蔽。 | **Documented**: component-specific cleanup/export scope, review exports and explicit user cleanup. No app-wide deletion feature introduced. |
+| M7-05 | Validation gap | Real keychain lifecycle, real API billing, physical desktop/WebView interaction, interactive uninstall, missing WebView2, FUSE and Wayland not exercised. / 真實環境仍未驗證。 | **NOT RUN / USER ACTION REQUIRED**, see beta plan. No real credentials requested or used. |
+
+**Conclusion within this scope:** no confirmed P0/P1 findings remain in the paths
+reviewed. This does not claim absence of all vulnerabilities or completion of the
+manual checks. P2 findings/residual risks are listed above. No architectural
+rewrite, new security dependencies or unrelated features were introduced.
+**範圍內結論：** 已審查路徑沒有已確認而未解決的 P0／P1；不代表不存在其他漏洞，亦不代表
+人工測試已完成。P2 問題與殘留風險如上。

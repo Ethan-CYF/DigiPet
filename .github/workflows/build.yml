@@ -1,7 +1,7 @@
 name: Build desktop pet
 on:
   push:
-    branches: [main, feat/m6-release-pipeline]
+    branches: [main, feat/m6-release-pipeline, feat/m7-beta-docs]
     tags: ['v*']
   pull_request:
     branches: [main]
@@ -102,6 +102,10 @@ jobs:
           path: work/downloaded
       - name: Verify downloaded installer files
         run: node scripts/release/artifacts.mjs verify work/downloaded ${{ matrix.platform }}
+      - name: Windows missing-uninstaller negative-path regression (child must fail)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/release/test-smoke-windows.ps1
       - name: Windows silent install, native launch and uninstall (CI data only)
         if: runner.os == 'Windows'
         shell: pwsh

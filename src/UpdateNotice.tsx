@@ -1,19 +1,23 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
 interface ReleaseNotice { version: string; tag: string; url: string }
 
 export function useUpdateNotice(desktop: boolean) {
   const [release, setRelease] = useState<ReleaseNotice | null>(null);
-  useEffect(() => {
-    if (!desktop) return;
-    let active = true;
-    void invoke<ReleaseNotice | null>("check_for_update")
-      .then((value) => { if (active) setRelease(value); })
-      .catch(() => {});
-    return () => { active = false; };
-  }, [desktop]);
-  return { release, dismiss: () => setRelease(null) };
+  const [checking, setChecking] = useState(false);
+  async function check() {
+    if (!desktop || checking) return;
+    setChecking(true);
+    try {
+      setRelease(await invoke<ReleaseNotice | null>("check_for_update") ?? null);
+    } catch {
+      // Offline and metadata failures stay silent; never retry automatically.
+    } finally {
+      setChecking(false);
+    }
+  }
+  return { release, check, checking, dismiss: () => setRelease(null) };
 }
 
 export default function UpdateNotice({ release, dismiss }: ReturnType<typeof useUpdateNotice>) {

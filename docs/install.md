@@ -6,7 +6,7 @@ not publisher identity. Use only a trusted source and matching manifest; a compr
 source could replace both. / DigiPet 沒有程式碼簽署、公證或 ad-hoc signing。
 SHA-256 只核對檔案與清單是否一致，不能驗證發行者；請確認來源可信。
 
-M6 adds packaging infrastructure, not a published release. The version remains
+M6/M7 provide packaging and beta preparation, not a published release. The version remains
 `0.1.0`; this work does not tag or publish it. Downloadable CI artifacts require
 GitHub access and expire after 14 days. / M6 提供打包流程，不代表已發佈版本；版本仍為
 `0.1.0`，本次不建立 tag 或公開發佈。CI artifacts 需登入 GitHub，並保留 14 日。
@@ -128,14 +128,15 @@ not guarantee keychain erasure. Exported files in user-chosen folders are never
 removed by uninstall. / 請在移除程式前解鎖金鑰庫，於設定停用 API／移除路由；解除安裝或
 刪除程式資料不保證清除金鑰庫。使用者匯出的檔案不會由移除程式刪除。
 
-Once per native app startup, DigiPet checks GitHub's latest published, non-draft,
-non-prerelease release metadata (5-second limit). Only a newer SemVer produces a
-notice inside chat. Opening the link is explicit; download, checksum verification
-and installation are manual. There are no automatic asset downloads, installs,
-background polling or updater service. No release/offline/errors remain silent.
-This anonymous GitHub metadata request sends no API keys, chats or local files.
-原生程式每次啟動只查詢一次 GitHub 最新已公開正式版本（最多 5 秒）；僅較新的 SemVer
-會在聊天內顯示提示。只有按連結才開啟版本頁面；下載、核對 SHA-256 及安裝均由使用者手動
-進行。沒有自動下載、安裝或背景輪詢；查詢不傳送 API key、對話或本機檔案。
+In Settings, press **Check for updates / 檢查更新** to request GitHub's latest
+published, non-draft, non-prerelease release metadata (5-second limit). There is no
+startup request, timer or background polling. Only a newer SemVer produces a
+notice inside chat. Opening the link, download, checksum verification and
+installation are manual. No release/offline/errors remain silent. This anonymous
+GitHub metadata request sends no API keys, chats or local files.
+在設定按 **Check for updates / 檢查更新** 才查詢 GitHub 最新已公開正式版本（最多 5 秒）；
+不會在啟動或背景自動查詢。只有較新的 SemVer 才顯示提示，由使用者開啟版本頁、下載、
+核對 SHA-256 及安裝；沒有自動下載／安裝，沒有版本或查詢失敗時保持安靜。
+查詢不傳送 API key、對話或本機檔案。
 
 See [known issues](known-issues.md) and [release pipeline](release-pipeline.md).

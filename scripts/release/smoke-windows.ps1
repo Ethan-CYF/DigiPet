@@ -20,9 +20,11 @@ foreach ($directory in $dataDirs) {
   }
 }
 $app = $null
+$installed = $false
 try {
   $install = Start-Process -FilePath $installer -ArgumentList @('/S', "/D=$installDir") -Wait -PassThru
   if ($install.ExitCode -ne 0) { throw "Installer exit: $($install.ExitCode)" }
+  $installed = $true
   $exe = Join-Path $installDir 'digipet.exe'
   if (!(Test-Path $exe)) { throw 'Installed application missing' }
   if ((Get-AuthenticodeSignature $exe).Status -ne 'NotSigned') { throw 'Expected an UNSIGNED application' }
@@ -39,6 +41,10 @@ try {
 } finally {
   if ($app -and !$app.HasExited) { Stop-Process -Id $app.Id -Force }
   $uninstaller = Join-Path $installDir 'uninstall.exe'
+  if ($installed -and !(Test-Path $uninstaller)) {
+    'FAIL: Successful install is missing uninstall.exe' | Add-Content $evidence
+    throw 'Successful install is missing uninstall.exe'
+  }
   if (Test-Path $uninstaller) {
     $remove = Start-Process -FilePath $uninstaller -ArgumentList '/S' -Wait -PassThru
     if ($remove.ExitCode -ne 0) { throw "Uninstaller exit: $($remove.ExitCode)" }

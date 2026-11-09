@@ -30,3 +30,13 @@ test("downloaded manifests require every installer and reject tampering, duplica
     assert.throws(() => verify(output), /Checksum mismatch/);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
+
+
+test("v0.1.0 release versions remain consistent", () => {
+  const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+  const tauri = JSON.parse(readFileSync("src-tauri/tauri.conf.json", "utf8"));
+  const cargo = readFileSync("src-tauri/Cargo.toml", "utf8").split("[dependencies]")[0];
+  assert.equal(pkg.version, "0.1.0");
+  assert.equal(tauri.version, pkg.version);
+  assert.match(cargo, /^version = "0\.1\.0"$/m);
+});
