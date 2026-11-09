@@ -13,7 +13,8 @@
     "test": "vitest run src",
     "test:browser": "playwright test",
     "test:tools": "cargo build --locked --manifest-path tools-core/Cargo.toml --example model_fixture && vitest run tests/tools-e2e.test.ts",
-    "test:perf": "playwright test tests/browser/hardening.spec.ts --grep \"performance baseline\""
+    "test:perf": "playwright test tests/browser/hardening.spec.ts --grep \"performance baseline\"",
+    "test:release": "node --test scripts/release/*.test.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.10.1",
