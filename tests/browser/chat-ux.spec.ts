@@ -130,6 +130,12 @@ test("dragging and releasing at the start does not open chat", async ({
     y = b.y + b.height / 2;
   await page.mouse.move(x, y);
   await page.mouse.down();
+  await expect(
+    page.getByRole("navigation", {
+      name: "Pet action wheel / 寵物輪盤",
+      exact: true,
+    }),
+  ).toBeHidden();
   await page.mouse.move(x + 25, y, { steps: 4 });
   await page.mouse.move(x, y, { steps: 4 });
   await page.mouse.up();
@@ -210,17 +216,15 @@ test("hover wheel selects focused surfaces and dismisses on leave, Escape and ou
   });
   await pet.hover();
   await expect(wheel).toBeVisible();
-  await test
-    .info()
-    .attach("m8-wheel", {
-      path: await page
-        .screenshot({
-          path: test.info().outputPath("m8-wheel.png"),
-          omitBackground: true,
-        })
-        .then(() => test.info().outputPath("m8-wheel.png")),
-      contentType: "image/png",
-    });
+  await test.info().attach("m8-wheel", {
+    path: await page
+      .screenshot({
+        path: test.info().outputPath("m8-wheel.png"),
+        omitBackground: true,
+      })
+      .then(() => test.info().outputPath("m8-wheel.png")),
+    contentType: "image/png",
+  });
   await wheel.getByRole("button", { name: "Chat 聊天", exact: true }).click();
   await expect(wheel).toBeHidden();
   await expect(page.getByLabel("Message", { exact: true })).toBeFocused();

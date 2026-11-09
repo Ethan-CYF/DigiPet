@@ -117,6 +117,14 @@ test("offline UI uses real Rust calendar, journal and search; restart retains da
         page.getByRole("dialog", { name: "Confirm local write" }),
       ).toBeVisible();
       await page
+        .getByRole("button", { name: "Chat / 聊天", exact: true })
+        .click();
+      await expect(page.getByLabel("Send message")).toBeDisabled();
+      await page.getByLabel("Open controls / 開啟管理面板").click();
+      await expect(
+        page.getByRole("dialog", { name: "Confirm local write" }),
+      ).toBeVisible();
+      await page
         .getByRole("dialog", { name: "Confirm local write" })
         .getByRole("button", { name: "Reject / 拒絕", exact: true })
         .press("Escape");

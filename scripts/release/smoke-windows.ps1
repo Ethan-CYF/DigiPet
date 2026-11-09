@@ -36,24 +36,64 @@ try {
   if ($app.MainWindowHandle -eq 0) { throw 'No application window found' }
   'PASS: unsigned per-user silent install and native window launch' | Add-Content $evidence
   if (!(Test-Path (Join-Path $installDir 'uninstall.exe'))) { throw 'Successful install is missing uninstall.exe' }
-  Add-Type -AssemblyName UIAutomationClient
-  Add-Type -AssemblyName UIAutomationTypes
-  $condition = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $app.Id)
+  # Enumerate real HWNDs: owned native dialogs are not reliably exposed as
+  # desktop children in UI Automation on the unattended Windows runner.
+  Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class DigiPetNativeSmoke {
+  public sealed class WindowInfo { public IntPtr Handle; public string Title; }
+  private delegate bool EnumProc(IntPtr handle, IntPtr parameter);
+  [DllImport("user32.dll")] private static extern bool EnumWindows(EnumProc callback, IntPtr parameter);
+  [DllImport("user32.dll")] private static extern bool EnumChildWindows(IntPtr parent, EnumProc callback, IntPtr parameter);
+  [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr handle, out uint processId);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr handle, StringBuilder title, int size);
+  [DllImport("user32.dll", SetLastError = true)] private static extern bool PostMessageW(IntPtr handle, uint message, IntPtr wParam, IntPtr lParam);
+  private static string Title(IntPtr handle) { var text = new StringBuilder(1024); GetWindowText(handle, text, text.Capacity); return text.ToString(); }
+  public static WindowInfo[] ForProcess(int processId) {
+    var result = new List<WindowInfo>();
+    EnumWindows((handle, parameter) => {
+      uint owner; GetWindowThreadProcessId(handle, out owner);
+      if (owner == processId) result.Add(new WindowInfo { Handle = handle, Title = Title(handle) });
+      return true;
+    }, IntPtr.Zero);
+    return result.ToArray();
+  }
+  public static IntPtr Button(IntPtr parent, string caption) {
+    IntPtr result = IntPtr.Zero;
+    EnumChildWindows(parent, (handle, parameter) => {
+      if (Title(handle) == caption) { result = handle; return false; }
+      return true;
+    }, IntPtr.Zero);
+    return result;
+  }
+  public static void Click(IntPtr button) {
+    if (!PostMessageW(button, 0x00F5, IntPtr.Zero, IntPtr.Zero)) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+  }
+}
+'@
   $deadline = (Get-Date).AddSeconds(20)
   $accessDialog = $null
   do {
-    $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $condition)
-    foreach ($window in $windows) {
-      if ($window.Current.Name -like '*DigiPet M6*') { throw 'Stale M6 window title' }
-      if ($window.Current.Name -like '*Local tool access*') { $accessDialog = $window }
+    $nativeWindows = [DigiPetNativeSmoke]::ForProcess($app.Id)
+    foreach ($window in $nativeWindows) {
+      if ($window.Title -like '*DigiPet M6*') { throw 'Stale M6 window title' }
+      if ($window.Title -like '*Local tool access*') { $accessDialog = $window }
     }
     if (!$accessDialog) { Start-Sleep -Milliseconds 250 }
   } while (!$accessDialog -and (Get-Date) -lt $deadline)
-  if (!$accessDialog) { throw 'Missing native first-run DigiPet tool-access prompt' }
-  $allowCondition = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NameProperty, 'Allow / 允許')
-  $allow = $accessDialog.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $allowCondition)
-  if (!$allow) { throw 'Native access prompt has no Allow control' }
-  $allow.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+  foreach ($window in $nativeWindows) { "Native CI window: $($window.Title)" | Add-Content $evidence }
+  if (!$accessDialog) {
+    $accessMarker = Join-Path $dataDirs[0] 'local-tool-access-v1.txt'
+    if (Test-Path $accessMarker) { "Access marker: $(Get-Content $accessMarker)" | Add-Content $evidence }
+    Get-Content $evidence
+    throw 'Missing native first-run DigiPet tool-access prompt'
+  }
+  $allow = [DigiPetNativeSmoke]::Button($accessDialog.Handle, 'Allow / 允許')
+  if ($allow -eq [IntPtr]::Zero) { throw 'Native access prompt has no Allow control' }
+  [DigiPetNativeSmoke]::Click($allow)
   $accessFile = Join-Path $dataDirs[0] 'local-tool-access-v1.txt'
   $grantsFile = Join-Path $dataDirs[1] 'tools/tools-v1.json'
   $deadline = (Get-Date).AddSeconds(15)

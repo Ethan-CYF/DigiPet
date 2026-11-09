@@ -21,8 +21,8 @@ export default function LocalTools({
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
-    pendingChanged?.(!!preview);
-  }, [preview, pendingChanged]);
+    pendingChanged?.(busy || !!preview);
+  }, [preview, busy, pendingChanged]);
   async function run(approved?: boolean) {
     setBusy(true);
     setFailed(false);

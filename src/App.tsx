@@ -353,7 +353,7 @@ export default function App() {
       disposed = true;
       clearInterval(timer);
     };
-  }, [open, secondaryOpen, wheelOpen, desktop]);
+  }, [open, secondaryOpen, desktop]);
 
   async function mouseDown(event: MouseEvent<HTMLButtonElement>) {
     if (event.button !== 0) return;
@@ -425,7 +425,15 @@ export default function App() {
   async function send(event: FormEvent) {
     event.preventDefault();
     const message = text.trim();
-    if (!message || pending.current || busy || settingUp || accessBusy) return;
+    if (
+      !message ||
+      pending.current ||
+      busy ||
+      settingUp ||
+      accessBusy ||
+      localWritePending
+    )
+      return;
     if (!online) {
       setError(
         "Offline: chat requires a network provider. Local tools remain available. / 離線：聊天需要網路供應商，本機工具仍可使用。",
@@ -898,7 +906,7 @@ export default function App() {
           </label>
           <LocalTools
             pendingChanged={setLocalWritePending}
-            accessBusy={accessBusy}
+            accessBusy={accessBusy || busy}
             openAccess={() => {
               openControls();
               setSettingsPage("access");
@@ -937,6 +945,12 @@ export default function App() {
           aria-label="DigiPet chat"
         >
           <div className="reply-scroll">
+            {localWritePending && (
+              <p>
+                Review the pending local tool action in Tools & state. /
+                請在工具與狀態處理待核准的本機操作。
+              </p>
+            )}
             {!online && <p>Offline / 離線：聊天需連線，本機工具可用。</p>}
             {reminder && (
               <p role="alert">
@@ -981,7 +995,7 @@ export default function App() {
               onChange={(e) => setText(e.target.value)}
             />
             <button
-              disabled={busy || settingUp || accessBusy}
+              disabled={busy || settingUp || accessBusy || localWritePending}
               type="submit"
               aria-label="Send message"
             >
@@ -1018,12 +1032,14 @@ export default function App() {
       </nav>
       <button
         ref={controls}
-        className={`pet-controls${preview || reminder ? " attention" : ""}`}
+        className={`pet-controls${preview || reminder || localWritePending ? " attention" : ""}`}
         aria-label="Open controls / 開啟管理面板"
         title="Settings, appearance, conversations & tools / 設定、外觀、對話與工具 (Ctrl+,)"
         aria-expanded={secondaryOpen}
         aria-description={
-          preview ? "Pending write approval / 有待核准寫入" : undefined
+          preview || localWritePending
+            ? "Pending write approval / 有待核准寫入"
+            : undefined
         }
         onClick={() => (secondaryOpen ? closeSurfaces() : openControls())}
       >
@@ -1040,8 +1056,8 @@ export default function App() {
           e.preventDefault();
           openControls();
         }}
-        onMouseEnter={() => {
-          if (!gesture.current) setWheelOpen(true);
+        onMouseEnter={(e) => {
+          if (!e.buttons && !gesture.current) setWheelOpen(true);
         }}
         onMouseDown={mouseDown}
         onMouseMove={mouseMove}
