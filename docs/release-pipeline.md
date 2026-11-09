@@ -70,3 +70,26 @@ before each asset mutation. A concurrently published Draft stops further writes.
 There is no publish operation or tag-creation API in the scripts.
 只有已存在的 tag push 可進入寫入 job；tag 必須符合既有版本及原始碼 commit。
 重跑只更新同一 Draft 的四個指定 assets；遇到已公開版本會停止，絕不自動發佈。
+
+
+## M7 beta checks / M7 beta 檢查
+
+The M7 branch push is enabled so CI can run even when GitHub API access prevents
+PR creation. Both platform builds retain read-only contents permissions; no tag
+is created and the existing tag-only draft job is never triggered by this work.
+M7 分支 push 可執行 CI；本次不建立 tag，也不執行 tag-only Draft job。
+
+Windows first runs `test-smoke-windows.ps1`: a child PowerShell runs the production
+smoke with simulated successful installer/launch processes and real disposable
+fixture files, deliberately omitting `uninstall.exe`. Its exit status must be
+non-zero and its diagnostic must name the missing uninstaller. It is not a source
+text assertion. The normal smoke then uses the actual downloaded NSIS installer,
+checks removal of both executable files, HKCU registry cleanup and preservation of
+all disposable user-data sentinels. Missing uninstall.exe is still classified P2.
+負面回歸使用真正獨立程序及退出狀態；正常流程仍使用實際安裝包驗證卸載及資料保留。
+
+Browser tests add fresh wizard → mock keychain save → loopback OpenAI-compatible
+chat → history/settings restoration. Existing skip/stub, streaming/Stop, offline
+real Rust tools and restart tests are reused. Browser runs use mock native IPC;
+packaged native smoke remains a separate window/process check. See the
+[beta test plan](beta-test-plan.md) for evidence and manual-only checks.

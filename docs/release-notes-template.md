@@ -7,8 +7,8 @@
 
 Source / 原始碼 commit: `{{SOURCE_SHA}}`
 
-This is a **Draft** for maintainer review. This workflow never publishes releases
-or creates tags. / 這是供維護者審閱的 **Draft**；流程不會公開發佈或建立 tag。
+This is a **repository documentation draft** for maintainer review. M7 does not create or modify any GitHub Release object
+or create tags. / 這是供維護者審閱的**儲存庫文件草稿**；M7 不建立／修改 GitHub Release 或 tag。
 Replace these template notes and attach actual CI evidence before any later,
 separately authorized publication. / 日後若另行授權公開發佈，請先填寫實際變更及 CI 證據。
 
@@ -46,8 +46,8 @@ release. Verify before installing; see [install and verification guide](https://
 - **Desktop integration:** X11 compositing and tray support vary; Wayland lacks
   automatic click-through, global shortcuts and saved position. / X11 合成及托盤支援
   視桌面而定；Wayland 不支援自動穿透、全域快捷鍵及位置儲存。
-- Updates only check published stable GitHub release metadata and offer a manual
-  download link; offline/no release/errors are silent. / 更新只查詢已公開的正式版本資訊，
+- Updates are checked explicitly in Settings and only query published stable GitHub release metadata and offer a manual
+  download link; offline/no release/errors are silent. / 更新只在設定按「檢查更新」後查詢已公開的正式版本資訊，
   提供手動下載連結；離線、無版本或失敗時不作提示。
 - [Known issues / 已知問題](https://github.com/Ethan-CYF/DigiPet/blob/main/docs/known-issues.md)
 
@@ -75,3 +75,9 @@ removed. Keychain entries and tool-exported files require separate user action.
 先退出 DigiPet。Windows：設定 → 應用程式 → DigiPet → 解除安裝；不要勾選 **Delete app data**
 即可保留外觀、歷史及設定。Linux：`sudo apt remove digi-pet` 或刪除 AppImage。
 金鑰庫項目及匯出的工具檔案需另行處理；詳見安裝指引。
+
+
+Real API-key, real OS-keychain and physical-device validation:
+**NOT RUN / USER ACTION REQUIRED**. Link the completed [beta results](https://github.com/Ethan-CYF/DigiPet/blob/main/docs/beta-test-plan.md)
+and final-head CI evidence before making readiness claims. Never enter real keys
+in this template or CI. / 真實 API、金鑰庫及實體裝置未測試，不可視作通過。
