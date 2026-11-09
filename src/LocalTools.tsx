@@ -1,8 +1,16 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { backend, type Preview, type ToolArgs } from "./modules/tools";
 /** Existing local features through the exact same backend grants and write previews. No provider involved. */
-export default function LocalTools() {
+export default function LocalTools({
+  pendingChanged,
+  openAccess,
+  accessBusy = false,
+}: {
+  pendingChanged?: (pending: boolean) => void;
+  openAccess?: () => void;
+  accessBusy?: boolean;
+}) {
   const [tool, setTool] = useState<"calendar" | "journal" | "file_search">(
     "calendar",
   );
@@ -11,8 +19,13 @@ export default function LocalTools() {
   const [result, setResult] = useState("");
   const [preview, setPreview] = useState<Preview>();
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    pendingChanged?.(!!preview);
+  }, [preview, pendingChanged]);
   async function run(approved?: boolean) {
     setBusy(true);
+    setFailed(false);
     try {
       const value =
         approved !== undefined && preview
@@ -28,6 +41,7 @@ export default function LocalTools() {
         JSON.stringify(value.untrusted_data ?? value.status ?? "", null, 2),
       );
     } catch {
+      setFailed(true);
       setResult(
         "Unavailable or denied. Check grants or repair local tools in Settings. / 不可用或權限拒絕，請檢查授權或在設定修復工具。",
       );
@@ -89,7 +103,7 @@ export default function LocalTools() {
         </label>
       ))}
       <button
-        disabled={busy || !!preview || !isTauri()}
+        disabled={accessBusy || busy || !!preview || !isTauri()}
         onClick={() => void run()}
       >
         Run locally / 本機執行
@@ -106,6 +120,11 @@ export default function LocalTools() {
             Reject / 拒絕
           </button>
         </section>
+      )}
+      {failed && openAccess && (
+        <button onClick={openAccess}>
+          Grant or repair access / 授權或修復存取
+        </button>
       )}
       <pre aria-label="Local tool result">{result}</pre>
     </details>

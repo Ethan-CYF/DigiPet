@@ -1,4 +1,3 @@
-import ToolPermissions from "./ToolPermissions";
 import { useState, type FormEvent } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
@@ -83,7 +82,6 @@ export default function ApiSettings({
   }
   return (
     <section className="api-settings" aria-label="API setup">
-      <ToolPermissions />
       <label>
         <input
           type="checkbox"

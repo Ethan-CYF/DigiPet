@@ -354,6 +354,9 @@ impl Engine {
         )
         .map_err(|_| "Audit failed".into())
     }
+    pub fn has_pending_writes(&self) -> bool {
+        !self.pending.is_empty()
+    }
     pub fn grants(&self) -> Grants {
         self.saved.grants.clone()
     }

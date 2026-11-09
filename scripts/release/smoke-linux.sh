@@ -21,7 +21,11 @@ launch() {
     trap '\''kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true'\'' EXIT
     sleep 8
     kill -0 "$pid" || exit 1
-    xwininfo -root -tree | tee /dev/stderr | grep -q "DigiPet" || exit 1
+    tree=$(xwininfo -root -tree)
+    echo "$tree"
+    grep -q "DigiPet" <<< "$tree" || exit 1
+    grep -q "Local tool access" <<< "$tree" || { echo "Missing native first-run tool access dialog"; exit 1; }
+    if grep -q "DigiPet M6" <<< "$tree"; then exit 1; fi
   ' bash "$@" > "work/smoke-$label.log" 2>&1
   result=$?
   set -e
@@ -41,6 +45,7 @@ for file in "$XDG_DATA_HOME/io.github.ethan-cyf.digipet"/ci-*-sentinel.txt "$XDG
 done
 {
   echo 'PASS: deb install, X11/Xvfb native window launch, removal and CI user-data preservation'
+  echo 'PASS: native first-run DigiPet tool-access dialog shown separately (no system calendar integration)'
   echo 'PASS: AppImage extract-and-run native window launch (no FUSE required)'
   echo 'NOT TESTED: FUSE mount, Wayland, compositor/tray/DPI integration, interactive GUI and real desktops'
 } | tee work/smoke-linux.txt

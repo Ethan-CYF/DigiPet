@@ -60,27 +60,33 @@ test("mock native streaming, Stop, persistent continuation, consent revocation a
   await expect(page.getByLabel("Send message")).toBeEnabled();
   await page.reload();
   await page.getByLabel("DigiPet: click to chat, drag to move").press("Enter");
+  await page.getByLabel("Open controls / 開啟管理面板").click();
+  await page.getByRole("button", { name: "Conversations / 對話", exact: true }).click();
   await expect(page.getByLabel("Conversation").locator("option")).toHaveCount(
     2,
   );
   await page.getByLabel("Conversation").selectOption({ label: "hello" });
+  await page.getByRole("button", { name: "Chat / 聊天", exact: true }).click();
   await expect(page.getByRole("status")).toContainText(
     "Progressive partial reply",
   );
   await expect(page.getByRole("status")).toContainText("Stopped / 已停止");
-  await page.getByText("Settings / 設定", { exact: true }).click();
+  await page.getByLabel("Open controls / 開啟管理面板").click();
   await page.getByLabel("Consent https://example.test/v1 chat").uncheck();
   await page.getByText("Save router / 儲存路由", { exact: true }).click();
   await page.getByLabel("Message", { exact: true }).fill("blocked");
   await page.getByLabel("Send message").click();
   await expect(page.getByRole("alert")).toContainText("Cloud consent required");
   await expect(page.getByLabel("Send message")).toBeEnabled();
+  await page.getByLabel("Open controls / 開啟管理面板").click();
+  await page.getByRole("button", { name: "Conversations / 對話", exact: true }).click();
   await page.getByText("Clear all / 全部清除", { exact: true }).click();
   await expect(page.getByLabel("Conversation").locator("option")).toHaveCount(
     1,
   );
   await page.reload();
-  await page.getByLabel("DigiPet: click to chat, drag to move").press("Enter");
+  await page.getByLabel("Open controls / 開啟管理面板").click();
+  await page.getByRole("button", { name: "Conversations / 對話", exact: true }).click();
   await expect(page.getByLabel("Conversation").locator("option")).toHaveCount(
     1,
   );

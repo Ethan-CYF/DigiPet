@@ -35,6 +35,37 @@ try {
   # A real top-level HWND is stronger evidence than a sleeping process alone.
   if ($app.MainWindowHandle -eq 0) { throw 'No application window found' }
   'PASS: unsigned per-user silent install and native window launch' | Add-Content $evidence
+  if (!(Test-Path (Join-Path $installDir 'uninstall.exe'))) { throw 'Successful install is missing uninstall.exe' }
+  Add-Type -AssemblyName UIAutomationClient
+  Add-Type -AssemblyName UIAutomationTypes
+  $condition = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $app.Id)
+  $deadline = (Get-Date).AddSeconds(20)
+  $accessDialog = $null
+  do {
+    $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll([System.Windows.Automation.TreeScope]::Children, $condition)
+    foreach ($window in $windows) {
+      if ($window.Current.Name -like '*DigiPet M6*') { throw 'Stale M6 window title' }
+      if ($window.Current.Name -like '*Local tool access*') { $accessDialog = $window }
+    }
+    if (!$accessDialog) { Start-Sleep -Milliseconds 250 }
+  } while (!$accessDialog -and (Get-Date) -lt $deadline)
+  if (!$accessDialog) { throw 'Missing native first-run DigiPet tool-access prompt' }
+  $allowCondition = [System.Windows.Automation.PropertyCondition]::new([System.Windows.Automation.AutomationElement]::NameProperty, 'Allow / 允許')
+  $allow = $accessDialog.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $allowCondition)
+  if (!$allow) { throw 'Native access prompt has no Allow control' }
+  $allow.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern).Invoke()
+  $accessFile = Join-Path $dataDirs[0] 'local-tool-access-v1.txt'
+  $grantsFile = Join-Path $dataDirs[1] 'tools/tools-v1.json'
+  $deadline = (Get-Date).AddSeconds(15)
+  while ((!(Test-Path $accessFile) -or !(Test-Path $grantsFile)) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
+  if (!(Test-Path $accessFile) -or (Get-Content $accessFile) -ne 'allowed') { throw 'Native Allow decision was not persisted' }
+  $toolsData = Get-Content -Raw $grantsFile | ConvertFrom-Json
+  if ('calendar' -notin $toolsData.grants.tools -or 'journal' -notin $toolsData.grants.tools) { throw 'Native Allow did not grant local calendar/journal' }
+  foreach ($tool in @('report', 'coding', 'file_search')) {
+    if ($tool -in $toolsData.grants.tools) { throw 'First-run access silently enabled file tools' }
+  }
+  'PASS: native first-run Allow grants only app-local calendar/journal; file tools remain denied' | Add-Content $evidence
+
 } catch {
   "FAIL: $($_.Exception.Message)" | Add-Content $evidence
   throw

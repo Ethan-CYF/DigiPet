@@ -2,6 +2,7 @@ import { reportRecovery } from "./modules/recovery";
 import UpdateNotice, { useUpdateNotice } from "./UpdateNotice";
 import DataSettings from "./DataSettings";
 import LocalTools from "./LocalTools";
+import ToolPermissions from "./ToolPermissions";
 import {
   backend,
   runTask,
@@ -55,6 +56,7 @@ export default function App() {
       const abort = () => finish(false);
       approval.current = finish;
       setPreview(value);
+      setSecondaryOpen(true);
       signal.addEventListener("abort", abort, { once: true });
       if (signal.aborted) abort();
     });
@@ -79,11 +81,39 @@ export default function App() {
   }, [desktop]);
   const [settings, setSettings] = useState(loadSettings);
   const [settingUp, setSettingUp] = useState(!settings.completed);
+  const [secondaryOpen, setSecondaryOpen] = useState(!settings.completed);
+  const [section, setSection] = useState("settings");
+  const [settingsPage, setSettingsPage] = useState("api");
+  const [wheelOpen, setWheelOpen] = useState(false);
+  const wheel = useRef<HTMLElement>(null);
   const [open, setOpen] = useState(
     !settings.completed || settings.openOnStartup === true,
   );
   const pending = useRef<AbortController | null>(null);
   const [busy, setBusy] = useState(false);
+  const [localWritePending, setLocalWritePending] = useState(false);
+  const [accessBusy, setAccessBusy] = useState(desktop);
+  const [accessStatus, setAccessStatus] = useState("");
+  async function requestAccess(force: boolean) {
+    setAccessBusy(true);
+    try {
+      const status = await invoke<string>("tool_access_setup", { force });
+      setAccessStatus(status ?? "");
+      if (status === "deferred") {
+        openControls();
+        setSettingsPage("access");
+      }
+    } catch {
+      setAccessStatus("error");
+      openControls();
+      setSettingsPage("access");
+    } finally {
+      setAccessBusy(false);
+    }
+  }
+  useEffect(() => {
+    if (desktop) void requestAccess(false);
+  }, [desktop]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [current, setCurrent] = useState<Conversation | null>(null);
   const currentRef = useRef<Conversation | null>(null);
@@ -120,7 +150,7 @@ export default function App() {
     );
     setError("");
   }
-  const [managing, setManaging] = useState(false);
+  const managing = section === "appearance";
   const [library, setLibrary] = useState(loadLibrary);
   const [animation, setAnimation] = useState<AnimationState>({
     state: "idle",
@@ -178,12 +208,43 @@ export default function App() {
   const [reply, setReply] = useState("你好！我是 DigiPet。");
   const [error, setError] = useState("");
   const bubble = useRef<HTMLElement>(null);
+  const secondary = useRef<HTMLElement>(null);
+  const controls = useRef<HTMLButtonElement>(null);
   const pet = useRef<HTMLButtonElement>(null);
   const input = useRef<HTMLInputElement>(null);
-  const gesture = useRef<{ x: number; y: number; dragged: boolean } | null>(
-    null,
-  );
-  const toggle = () => setOpen((value) => !value);
+  type PetGesture = {
+    x: number;
+    y: number;
+    dragged: boolean;
+    monitoring: boolean;
+    released?: { x: number; y: number };
+  };
+  const gesture = useRef<PetGesture | null>(null);
+  const toggle = () => {
+    setWheelOpen(false);
+    setSecondaryOpen(false);
+    setSettingUp(false);
+    setOpen((value) => !value);
+  };
+  function openControls(target = "settings") {
+    setWheelOpen(false);
+    if (target === "settings" && (busy || localWritePending)) target = "tools";
+    setSection(target);
+    setSettingUp(target === "settings");
+    setSecondaryOpen(true);
+  }
+  function closeSurfaces() {
+    setWheelOpen(false);
+    setSecondaryOpen(false);
+    setOpen(false);
+    pet.current?.focus({ preventScroll: true });
+  }
+  function returnToChat() {
+    setWheelOpen(false);
+    setSecondaryOpen(false);
+    setSettingUp(false);
+    setOpen(true);
+  }
 
   useEffect(() => {
     if (!desktop) return;
@@ -202,21 +263,43 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (open) {
-      if (settingUp) {
-        bubble.current
-          ?.querySelector<HTMLInputElement>('[aria-label="API base URL"]')
-          ?.focus({ preventScroll: true });
-        if (bubble.current) bubble.current.scrollTop = 0;
-      } else if (managing) {
-        bubble.current
-          ?.querySelector<HTMLSelectElement>(
-            '[aria-label="Current appearance"]',
+    if (secondaryOpen) {
+      if (secondary.current) secondary.current.scrollTop = 0;
+      const target = preview
+        ? secondary.current?.querySelector<HTMLElement>(
+            '[aria-label="Confirm write / 確認寫入"]',
           )
-          ?.focus({ preventScroll: true });
-        if (bubble.current) bubble.current.scrollTop = 0;
-      } else input.current?.focus();
-    }
+        : settingUp
+          ? (secondary.current?.querySelector<HTMLElement>(
+              '[aria-label="API base URL"]',
+            ) ??
+            secondary.current?.querySelector<HTMLElement>(
+              '[aria-label="System prompt"]',
+            ))
+          : secondary.current?.querySelector<HTMLElement>(
+              managing
+                ? '[aria-label="Current appearance"]'
+                : '[aria-label="Close controls / 關閉管理面板"]',
+            );
+      const focusTarget =
+        target ??
+        secondary.current?.querySelector<HTMLElement>(
+          '[aria-label="Close controls / 關閉管理面板"]',
+        );
+      focusTarget?.focus({ preventScroll: true });
+      focusTarget?.scrollIntoView?.({ block: "nearest" });
+    } else if (open) input.current?.focus({ preventScroll: true });
+  }, [
+    open,
+    secondaryOpen,
+    managing,
+    settingUp,
+    preview,
+    section,
+    settingsPage,
+  ]);
+
+  useEffect(() => {
     if (!desktop) return;
     // Keep the pet anchored at the same screen location when the bubble expands upward.
     let disposed = false;
@@ -233,21 +316,33 @@ export default function App() {
               bounds,
             )
           : [];
-      if (bubble.current) {
-        const r = bubble.current.getBoundingClientRect();
+      // Rectangles are CSS pixels; the native hit test applies the monitor scale.
+      for (const element of [
+        bubble.current,
+        secondary.current,
+        controls.current,
+        wheel.current,
+      ]) {
+        if (!element || element.hidden) continue;
+        if (
+          element === controls.current &&
+          getComputedStyle(element).opacity === "0"
+        )
+          continue;
+        const r = element.getBoundingClientRect();
         rectangles.push({
           x: r.x,
           y: r.y,
           width: r.width,
-          height: r.height + 10,
+          height: r.height + (element === bubble.current ? 14 : 0),
         });
       }
       await invoke("set_hit_regions", { rectangles });
     };
     void (async () => {
       await invoke("resize_pet", {
-        expanded: open,
-        managing: open && (managing || settingUp || toolsEnabled),
+        expanded: open || secondaryOpen,
+        managing: secondaryOpen,
       });
       if (!disposed) await publish();
     })().catch((e) => setError(String(e)));
@@ -258,17 +353,25 @@ export default function App() {
       disposed = true;
       clearInterval(timer);
     };
-  }, [open, managing, settingUp, toolsEnabled]);
+  }, [open, secondaryOpen, wheelOpen, desktop]);
 
   async function mouseDown(event: MouseEvent<HTMLButtonElement>) {
     if (event.button !== 0) return;
-    gesture.current = { x: event.screenX, y: event.screenY, dragged: false };
+    setWheelOpen(false);
+    const start: PetGesture = {
+      x: event.screenX,
+      y: event.screenY,
+      dragged: false,
+      monitoring: desktop,
+    };
+    gesture.current = start;
     if (!desktop) return;
     try {
       // Native monitoring survives the OS move loop consuming the DOM mouseup.
       const monitored = await invoke<boolean>("begin_pet_gesture");
       if (monitored) {
-        gesture.current = null;
+        // React must not toggle while begin_pet_gesture is still in flight.
+        if (gesture.current === start) gesture.current = null;
         try {
           await getCurrentWindow().startDragging();
         } catch (e) {
@@ -277,7 +380,14 @@ export default function App() {
         }
       }
       // Wayland: no global button query; use the DOM threshold path below.
+      else {
+        start.monitoring = false;
+        if (start.released)
+          finishGesture(start, start.released.x, start.released.y);
+        else if (start.dragged) await getCurrentWindow().startDragging();
+      }
     } catch (e) {
+      if (gesture.current === start) gesture.current = null;
       setError(String(e));
     }
   }
@@ -287,22 +397,26 @@ export default function App() {
     if (Math.hypot(event.screenX - start.x, event.screenY - start.y) > 5) {
       start.dragged = true;
       changeState("walk");
-      if (desktop)
+      if (desktop && !start.monitoring)
         await getCurrentWindow()
           .startDragging()
           .catch((e) => setError(String(e)));
     }
   }
+  function finishGesture(start: PetGesture, x: number, y: number) {
+    if (gesture.current === start) gesture.current = null;
+    if (start.dragged) changeState("idle");
+    if (!start.dragged && Math.hypot(x - start.x, y - start.y) <= 5) toggle();
+  }
   function mouseUp(event: MouseEvent<HTMLButtonElement>) {
+    if (event.button !== 0) return;
     const start = gesture.current;
-    gesture.current = null;
-    if (start?.dragged) changeState("idle");
-    if (
-      start &&
-      !start.dragged &&
-      Math.hypot(event.screenX - start.x, event.screenY - start.y) <= 5
-    )
-      toggle();
+    if (!start) return;
+    if (start.monitoring) {
+      start.released = { x: event.screenX, y: event.screenY };
+      return;
+    }
+    finishGesture(start, event.screenX, event.screenY);
   }
   function stop() {
     pending.current?.abort();
@@ -311,7 +425,7 @@ export default function App() {
   async function send(event: FormEvent) {
     event.preventDefault();
     const message = text.trim();
-    if (!message || pending.current || busy || settingUp) return;
+    if (!message || pending.current || busy || settingUp || accessBusy) return;
     if (!online) {
       setError(
         "Offline: chat requires a network provider. Local tools remain available. / 離線：聊天需要網路供應商，本機工具仍可使用。",
@@ -452,55 +566,141 @@ export default function App() {
   return (
     <main
       onKeyDown={(e) => {
-        if (e.key === "Escape") setOpen(false);
+        if (e.key === "Escape") {
+          e.preventDefault();
+          closeSurfaces();
+        }
+        if ((e.ctrlKey || e.metaKey) && e.key === ",") {
+          e.preventDefault();
+          openControls();
+        }
       }}
-      className={
-        open
-          ? `stage expanded${managing || settingUp || toolsEnabled ? " managing" : ""}`
-          : "stage"
-      }
+      onMouseLeave={() => setWheelOpen(false)}
+      onMouseMove={(e) => {
+        if (!wheelOpen) return;
+        const inside = (el: HTMLElement | null) => {
+          const r = el?.getBoundingClientRect();
+          return (
+            r &&
+            e.clientX >= r.left &&
+            e.clientX <= r.right &&
+            e.clientY >= r.top &&
+            e.clientY <= r.bottom
+          );
+        };
+        if (!inside(pet.current) && !inside(wheel.current)) setWheelOpen(false);
+      }}
+      onPointerDownCapture={(e) => {
+        if (
+          !pet.current?.contains(e.target as Node) &&
+          !wheel.current?.contains(e.target as Node)
+        )
+          setWheelOpen(false);
+      }}
+      className={`stage${open || secondaryOpen ? " expanded" : ""}${secondaryOpen ? " managing" : ""}`}
     >
-      {open && (
-        <section ref={bubble} className="bubble" aria-label="DigiPet chat">
-          <header>
-            <span>
-              DigiPet <small>M6</small>
-            </span>
-            <button aria-label="Close chat" onClick={() => setOpen(false)}>
-              ×
-            </button>
-          </header>
-          <UpdateNotice {...updateNotice} />
-          <div className="actions">
+      <section
+        ref={secondary}
+        className="secondary"
+        aria-label="DigiPet controls / 管理面板"
+        hidden={!secondaryOpen}
+      >
+        <header>
+          <span>DigiPet</span>
+          <button
+            aria-label="Close controls / 關閉管理面板"
+            onClick={closeSurfaces}
+          >
+            ×
+          </button>
+        </header>
+        <nav className="actions" aria-label="Pet controls / 寵物管理">
+          <button onClick={returnToChat}>Chat / 聊天</button>
+          <button
+            aria-pressed={section === "settings"}
+            disabled={busy || localWritePending}
+            onClick={() => openControls("settings")}
+          >
+            Settings / 設定
+          </button>
+          <button
+            aria-pressed={managing}
+            onClick={() => openControls("appearance")}
+          >
+            Appearance / 外觀
+          </button>
+          <button
+            aria-pressed={section === "conversations"}
+            onClick={() => openControls("conversations")}
+          >
+            Conversations / 對話
+          </button>
+          <button
+            aria-pressed={section === "tools"}
+            onClick={() => openControls("tools")}
+          >
+            Tools & state / 工具與狀態
+          </button>
+        </nav>
+        {preview && (
+          <section role="dialog" aria-label="Confirm tool write">
+            <p>
+              {preview.tool}: {preview.target}
+            </p>
+            <p>Review the complete before/after change. / 確認完整變更內容。</p>
+            {preview.diff && (
+              <>
+                <h3>Patch / 差異</h3>
+                <pre>{preview.diff}</pre>
+              </>
+            )}
+            <h3>Before / 原內容</h3>
+            <pre>{preview.before || "(new / 新增)"}</pre>
+            <h3>After / 新內容</h3>
+            <pre>{preview.after}</pre>
             <button
-              onClick={() => {
-                setSettingUp(false);
-                setManaging((value) => !value);
-              }}
+              aria-label="Confirm write / 確認寫入"
+              onClick={() => approval.current?.(true)}
             >
-              {managing ? "Chat / 聊天" : "Appearance / 外觀"}
+              Confirm write / 確認寫入
             </button>
-            <button
-              disabled={busy}
-              onClick={() => {
-                setManaging(false);
-                setSettingUp((value) => !value);
-              }}
-            >
-              Settings / 設定
+            <button onClick={() => approval.current?.(false)}>
+              Reject / 拒絕
             </button>
-          </div>
-          {settingUp && (
-            <>
-              <AppearanceManager
-                library={library}
-                commit={commit}
-                invalid={invalid}
-                animation={animation}
+          </section>
+        )}
+        {secondaryOpen && busy && (
+          <>
+            <p role="status">{reply}</p>
+            <button onClick={stop}>Stop / 停止</button>
+          </>
+        )}
+        {secondaryOpen && settingUp && (
+          <>
+            <nav className="actions" aria-label="Settings sections / 設定分類">
+              <button onClick={() => setSettingsPage("api")}>
+                API & preferences / API 與偏好
+              </button>
+              <button onClick={() => setSettingsPage("access")}>
+                Local tool access / 本機工具授權
+              </button>
+              <button onClick={() => setSettingsPage("data")}>
+                Data & recovery / 資料與復原
+              </button>
+              <button onClick={() => setSettingsPage("updates")}>
+                Updates / 更新
+              </button>
+            </nav>
+            {settingsPage === "api" && (
+              <ApiSettings
+                settings={settings}
+                done={(next) => {
+                  setSettings(next);
+                  returnToChat();
+                }}
               />
-              {desktop && <button disabled={updateNotice.checking} onClick={() => void updateNotice.check()}>
-                Check for updates / 檢查更新
-              </button>}
+            )}
+            {settingsPage === "data" && (
               <DataSettings
                 settings={settings}
                 changed={() => {
@@ -515,19 +715,175 @@ export default function App() {
                     );
                 }}
               />
-              <ApiSettings
-                settings={settings}
-                done={(next) => {
-                  setSettings(next);
-                  setSettingUp(false);
-                }}
+            )}
+            {settingsPage === "access" && (
+              <section aria-label="Local tool access / 本機工具授權">
+                <h2>Local tool access / 本機工具授權</h2>
+                <p>
+                  Calendar and Journal use DigiPet's own local data. They do not
+                  access the OS calendar, so Windows/Linux have no system
+                  calendar permission prompt for these tools. /
+                  行事曆及日記只使用 DigiPet
+                  本機資料，不存取系統日曆，因此沒有對應的系統日曆權限提示。
+                </p>
+                <p>
+                  The native Allow dialog grants DigiPet tool access. File
+                  access uses the system folder picker below. Every write still
+                  requires approval. / 原生允許對話框授予 DigiPet
+                  工具存取；檔案存取使用下方的系統資料夾選擇器。每次寫入仍須確認。
+                </p>
+                {accessStatus === "deferred" && (
+                  <p role="status">
+                    Not allowed yet — choose tools below or request access
+                    again. / 尚未允許，可在下方授權或重新要求存取。
+                  </p>
+                )}
+                {accessStatus === "allowed" && (
+                  <p role="status">
+                    Initial access reviewed. Current grants are listed below. /
+                    已完成首次存取審閱，目前授權如下。
+                  </p>
+                )}
+                {accessStatus === "error" && (
+                  <p role="alert">
+                    Access setup failed. Retry or use Data & recovery if local
+                    storage is damaged. /
+                    授權失敗，請重試；若本機儲存損壞可使用資料與復原。
+                  </p>
+                )}
+                <button
+                  disabled={!desktop || accessBusy || busy || localWritePending}
+                  onClick={() => void requestAccess(true)}
+                >
+                  Request local access again / 重新要求本機存取
+                </button>
+                {!settings.completed && (
+                  <button onClick={() => setSettingsPage("api")}>
+                    Continue API setup / 繼續 API 設定
+                  </button>
+                )}
+                <ToolPermissions
+                  key={`${accessStatus}-${accessBusy}`}
+                  expanded
+                  disabled={accessBusy || busy || localWritePending}
+                />
+              </section>
+            )}
+            {settingsPage === "updates" && (
+              <>
+                <UpdateNotice {...updateNotice} />
+                {desktop && (
+                  <button
+                    disabled={updateNotice.checking}
+                    onClick={() => void updateNotice.check()}
+                  >
+                    Check for updates / 檢查更新
+                  </button>
+                )}
+              </>
+            )}
+          </>
+        )}
+        {secondaryOpen && managing && (
+          <AppearanceManager
+            library={library}
+            commit={commit}
+            invalid={invalid}
+            animation={animation}
+          />
+        )}
+        {secondaryOpen && section === "conversations" && (
+          <section aria-label="Chat history">
+            <select
+              aria-label="Conversation"
+              disabled={busy}
+              value={current?.id ?? ""}
+              onChange={(e) =>
+                selectConversation(
+                  conversations.find((c) => c.id === e.target.value) ?? null,
+                )
+              }
+            >
+              <option value="">New conversation / 新對話</option>
+              {conversations.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.title}
+                </option>
+              ))}
+            </select>
+            <button disabled={busy} onClick={() => selectConversation(null)}>
+              New / 新增
+            </button>
+            <button
+              disabled={busy || !current}
+              onClick={() => {
+                if (current)
+                  void history
+                    .remove(current.id)
+                    .then(async () => {
+                      selectConversation(null);
+                      setConversations(await history.list());
+                    })
+                    .catch(() =>
+                      setHistoryError(
+                        "Could not delete history / 無法刪除歷史",
+                      ),
+                    );
+              }}
+            >
+              Delete / 刪除
+            </button>
+            <button
+              disabled={busy}
+              onClick={() => {
+                void history
+                  .clear()
+                  .then(() => {
+                    selectConversation(null);
+                    setConversations([]);
+                  })
+                  .catch(() =>
+                    setHistoryError("Could not clear history / 無法清空歷史"),
+                  );
+              }}
+            >
+              Clear all / 全部清除
+            </button>
+            {current && (
+              <details>
+                <summary>Messages / 訊息</summary>
+                {current.messages.map((m, i) => (
+                  <p key={i}>
+                    {m.role}: {m.content}{" "}
+                    {m.status === "stopped"
+                      ? "(Stopped / 已停止)"
+                      : m.status === "error"
+                        ? "(Incomplete / 未完成)"
+                        : ""}
+                  </p>
+                ))}
+              </details>
+            )}
+          </section>
+        )}
+        {secondaryOpen && historyError && (
+          <p className="error">
+            {historyError} — Settings → Backup & repair history / 設定 →
+            備份並修復歷史
+          </p>
+        )}
+        <div hidden={section !== "tools"}>
+          {desktop && (
+            <label>
+              <input
+                type="checkbox"
+                checked={toolsEnabled}
+                disabled={busy}
+                onChange={(e) => setToolsEnabled(e.target.checked)}
               />
-            </>
+              AI tools / AI 工具
+            </label>
           )}
-          {!online && (
-            <p role="status">Offline / 離線：聊天需連線，本機工具可用。</p>
-          )}
-          <LocalTools />
           <label className="state-control">
             狀態 / State
             <select
@@ -540,149 +896,92 @@ export default function App() {
               ))}
             </select>
           </label>
-          {managing && (
-            <AppearanceManager
-              library={library}
-              commit={commit}
-              invalid={invalid}
-              animation={animation}
-            />
-          )}
-          {!settingUp && !managing && (
-            <section aria-label="Chat history">
-              <select
-                aria-label="Conversation"
-                disabled={busy}
-                value={current?.id ?? ""}
-                onChange={(e) =>
-                  selectConversation(
-                    conversations.find((c) => c.id === e.target.value) ?? null,
-                  )
-                }
-              >
-                <option value="">New conversation / 新對話</option>
-                {conversations.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.title}
-                  </option>
-                ))}
-              </select>
-              <button disabled={busy} onClick={() => selectConversation(null)}>
-                New / 新增
-              </button>
-              <button
-                disabled={busy || !current}
-                onClick={() => {
-                  if (current)
-                    void history
-                      .remove(current.id)
-                      .then(async () => {
-                        selectConversation(null);
-                        setConversations(await history.list());
-                      })
-                      .catch(() =>
-                        setHistoryError(
-                          "Could not delete history / 無法刪除歷史",
-                        ),
-                      );
-                }}
-              >
-                Delete / 刪除
-              </button>
-              <button
-                disabled={busy}
-                onClick={() => {
-                  void history
-                    .clear()
-                    .then(() => {
-                      selectConversation(null);
-                      setConversations([]);
-                    })
-                    .catch(() =>
-                      setHistoryError("Could not clear history / 無法清空歷史"),
-                    );
-                }}
-              >
-                Clear all / 全部清除
-              </button>
-              {current && (
-                <details>
-                  <summary>Messages / 訊息</summary>
-                  {current.messages.map((m, i) => (
-                    <p key={i}>
-                      {m.role}: {m.content}{" "}
-                      {m.status === "stopped"
-                        ? "(Stopped / 已停止)"
-                        : m.status === "error"
-                          ? "(Incomplete / 未完成)"
-                          : ""}
-                    </p>
-                  ))}
-                </details>
-              )}
-            </section>
-          )}
-          {historyError && (
-            <p className="error">
-              {historyError} — Settings → Backup & repair history / 設定 →
-              備份並修復歷史
-            </p>
-          )}
-          {desktop && (
-            <label>
-              <input
-                type="checkbox"
-                checked={toolsEnabled}
-                disabled={busy}
-                onChange={(e) => setToolsEnabled(e.target.checked)}
-              />
-              AI tools / AI 工具
-            </label>
-          )}
-          {reminder && (
-            <p role="alert">
-              Reminder / 提醒：{reminder}
-              <button onClick={() => setReminder("")}>Dismiss / 關閉</button>
-            </p>
-          )}
-          {preview && (
-            <section role="dialog" aria-label="Confirm tool write">
-              <p>
-                {preview.tool}: {preview.target}
+          <LocalTools
+            pendingChanged={setLocalWritePending}
+            accessBusy={accessBusy}
+            openAccess={() => {
+              openControls();
+              setSettingsPage("access");
+            }}
+          />
+        </div>
+        {secondaryOpen && reminder && (
+          <p role="alert">
+            Reminder / 提醒：{reminder}
+            <button onClick={() => setReminder("")}>Dismiss / 關閉</button>
+          </p>
+        )}
+        {secondaryOpen && error && (
+          <p className="error" role="alert">
+            {error}
+            <button
+              onClick={() => {
+                stop();
+                setError("");
+                changeState("idle");
+              }}
+            >
+              Reset provider task / 重設供應商工作
+            </button>
+            <button onClick={() => openControls()}>
+              Recovery settings / 復原設定
+            </button>
+          </p>
+        )}
+      </section>
+      {open && !secondaryOpen && (
+        <section
+          id="digipet-chat"
+          ref={bubble}
+          className="bubble"
+          aria-label="DigiPet chat"
+        >
+          <div className="reply-scroll">
+            {!online && <p>Offline / 離線：聊天需連線，本機工具可用。</p>}
+            {reminder && (
+              <p role="alert">
+                Reminder / 提醒：{reminder}
+                <button onClick={() => setReminder("")}>Dismiss / 關閉</button>
               </p>
-              <p>
-                Review the complete before/after change. / 確認完整變更內容。
+            )}
+            {historyError && (
+              <p className="error">
+                {historyError} — Settings → Backup & repair history / 設定 →
+                備份並修復歷史
               </p>
-              {preview.diff && (
-                <>
-                  <h3>Patch / 差異</h3>
-                  <pre>{preview.diff}</pre>
-                </>
-              )}
-              <h3>Before / 原內容</h3>
-              <pre>{preview.before || "(new / 新增)"}</pre>
-              <h3>After / 新內容</h3>
-              <pre>{preview.after}</pre>
-              <button onClick={() => approval.current?.(true)}>
-                Confirm write / 確認寫入
-              </button>
-              <button onClick={() => approval.current?.(false)}>
-                Reject / 拒絕
-              </button>
-            </section>
-          )}
-          <p role="status">{reply}</p>
+            )}
+            <p role="status" aria-live="polite">
+              {reply}
+            </p>
+            {error && (
+              <p className="error" role="alert">
+                {error}
+                <button
+                  onClick={() => {
+                    stop();
+                    setError("");
+                    changeState("idle");
+                  }}
+                >
+                  Reset provider task / 重設供應商工作
+                </button>
+                <button onClick={() => openControls()}>
+                  Recovery settings / 復原設定
+                </button>
+              </p>
+            )}
+          </div>
           <form onSubmit={send}>
             <input
               ref={input}
               aria-label="Message"
-              placeholder="說點什麼…"
+              placeholder="Message / 說點什麼…"
               value={text}
               maxLength={500}
               onChange={(e) => setText(e.target.value)}
             />
             <button
-              disabled={busy || settingUp}
+              disabled={busy || settingUp || accessBusy}
               type="submit"
               aria-label="Send message"
             >
@@ -690,34 +989,68 @@ export default function App() {
             </button>
           </form>
           {busy && <button onClick={stop}>Stop / 停止</button>}
-          {error && (
-            <p className="error" role="alert">
-              {error}
-              <button
-                onClick={() => {
-                  stop();
-                  setError("");
-                  changeState("idle");
-                }}
-              >
-                Reset provider task / 重設供應商工作
-              </button>
-              <button onClick={() => setSettingUp(true)}>
-                Recovery settings / 復原設定
-              </button>
-            </p>
-          )}
         </section>
       )}
+      <nav
+        ref={wheel}
+        hidden={!wheelOpen}
+        className="pet-wheel"
+        aria-label="Pet action wheel / 寵物輪盤"
+      >
+        <button className="wheel-chat" onClick={returnToChat}>
+          Chat
+          <br />
+          聊天
+        </button>
+        <button
+          className="wheel-appearance"
+          onClick={() => openControls("appearance")}
+        >
+          Appearance
+          <br />
+          外觀
+        </button>
+        <button className="wheel-settings" onClick={() => openControls()}>
+          Settings
+          <br />
+          設定
+        </button>
+      </nav>
+      <button
+        ref={controls}
+        className={`pet-controls${preview || reminder ? " attention" : ""}`}
+        aria-label="Open controls / 開啟管理面板"
+        title="Settings, appearance, conversations & tools / 設定、外觀、對話與工具 (Ctrl+,)"
+        aria-expanded={secondaryOpen}
+        aria-description={
+          preview ? "Pending write approval / 有待核准寫入" : undefined
+        }
+        onClick={() => (secondaryOpen ? closeSurfaces() : openControls())}
+      >
+        ⚙
+      </button>
       <button
         ref={pet}
         className="pet"
         aria-label="DigiPet: click to chat, drag to move"
-        aria-expanded={open}
+        aria-expanded={open && !secondaryOpen}
+        aria-controls="digipet-chat"
+        aria-description="Settings: hover for gear, right-click, or Ctrl+comma / 設定：滑過顯示齒輪、右鍵或 Ctrl+逗號"
+        onContextMenu={(e) => {
+          e.preventDefault();
+          openControls();
+        }}
+        onMouseEnter={() => {
+          if (!gesture.current) setWheelOpen(true);
+        }}
         onMouseDown={mouseDown}
         onMouseMove={mouseMove}
         onMouseUp={mouseUp}
         onKeyDown={(e) => {
+          if (e.key === "ContextMenu" || (e.shiftKey && e.key === "F10")) {
+            e.preventDefault();
+            openControls();
+          }
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
             toggle();

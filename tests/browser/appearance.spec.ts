@@ -19,7 +19,7 @@ const config = {
 const pet = (page: Page) =>
   page.getByRole("button", { name: "DigiPet: click to chat, drag to move" });
 async function manager(page: Page) {
-  await pet(page).press("Enter");
+  await page.getByLabel("Open controls / 開啟管理面板").click();
   await page.getByText("Appearance / 外觀", { exact: true }).click();
 }
 async function pixels(page: Page) {
@@ -66,7 +66,9 @@ test("single PNG crop, procedural movement, persistence, switch and delete", asy
       return p.red > p.blue;
     })
     .toBe(true);
+  await page.getByRole("button", { name: "Tools & state / 工具與狀態", exact: true }).click();
   await page.getByLabel("Animation state").selectOption("happy");
+  await page.getByRole("button", { name: "Appearance / 外觀", exact: true }).click();
   const first = await page
     .locator(".pet canvas")
     .evaluate((c: HTMLCanvasElement) => c.toDataURL());
@@ -126,14 +128,18 @@ test("sheet frame order, FPS, idle fallback, swapping and hostile config rejecti
       return p.red > p.blue;
     })
     .toBe(true);
+  await page.getByRole("button", { name: "Tools & state / 工具與狀態", exact: true }).click();
   await page.getByLabel("Animation state").selectOption("sleep"); // missing → idle [0]
+  await page.getByRole("button", { name: "Appearance / 外觀", exact: true }).click();
   await expect
     .poll(async () => {
       const p = await pixels(page);
       return p.red > p.blue;
     })
     .toBe(true);
+  await page.getByRole("button", { name: "Tools & state / 工具與狀態", exact: true }).click();
   await page.getByLabel("Animation state").selectOption("happy");
+  await page.getByRole("button", { name: "Appearance / 外觀", exact: true }).click();
   await expect
     .poll(
       async () => {
@@ -152,7 +158,9 @@ test("sheet frame order, FPS, idle fallback, swapping and hostile config rejecti
       { intervals: [30, 30, 30] },
     )
     .toBe(true);
+  await page.getByRole("button", { name: "Tools & state / 工具與狀態", exact: true }).click();
   await page.getByLabel("Animation state").selectOption("sad");
+  await page.getByRole("button", { name: "Appearance / 外觀", exact: true }).click();
   await expect
     .poll(async () => {
       const p = await pixels(page);
@@ -218,6 +226,7 @@ test("a corrupt saved PNG restores the visible default and preserves original by
     )
     .toBe("broken");
   await page.getByText("Settings / 設定", { exact: true }).click();
+  await page.getByRole("button", { name: "Data & recovery / 資料與復原", exact: true }).click();
   await page
     .getByText("Backup & reset digipet.appearances.v1 / 備份並重設", {
       exact: true,

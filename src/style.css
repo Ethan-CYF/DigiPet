@@ -32,7 +32,8 @@ button {
   height: 200px;
 }
 .stage.expanded {
-  height: 400px;
+  width: 320px;
+  height: 456px;
 }
 .pet {
   position: absolute;
@@ -61,26 +62,86 @@ button {
 }
 .bubble {
   position: absolute;
-  bottom: 160px;
+  bottom: 216px;
   left: 8px;
-  width: 184px;
-  padding: 10px;
+  width: 304px;
+  padding: 12px;
   background: #fffdf8;
-  border: 2px solid #4a3c63;
-  border-radius: 14px;
-  box-shadow: 0 3px 0 #4a3c6325;
+  border: 0;
+  border-radius: 20px;
+  box-shadow: 0 3px 12px #29243d20;
 }
 .bubble::after {
   content: "";
   position: absolute;
-  bottom: -8px;
-  left: 77px;
-  width: 12px;
-  height: 12px;
+  bottom: -9px;
+  left: 76px;
+  width: 18px;
+  height: 18px;
   background: #fffdf8;
-  border-right: 2px solid #4a3c63;
-  border-bottom: 2px solid #4a3c63;
   transform: rotate(45deg);
+  pointer-events: none;
+}
+.reply-scroll {
+  max-height: 150px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+.reply-scroll p {
+  max-height: none;
+  overflow: visible;
+}
+.pet-controls {
+  position: absolute;
+  bottom: 32px;
+  left: 164px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #fffdf8;
+  color: #685775;
+  opacity: 0;
+}
+.stage:hover .pet-controls,
+.stage:focus-within .pet-controls,
+.pet-controls.attention {
+  opacity: 1;
+}
+button:focus-visible,
+select:focus-visible,
+input:focus-visible,
+summary:focus-visible,
+a:focus-visible {
+  outline: 2px solid #725494;
+  outline-offset: 2px;
+}
+[hidden] {
+  display: none !important;
+}
+.secondary {
+  position: absolute;
+  left: 8px;
+  bottom: 216px;
+  width: 344px;
+  max-height: 414px;
+  padding: 12px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  background: #fffdf8;
+  border-radius: 14px;
+  box-shadow: 0 3px 12px #29243d20;
+}
+.secondary .actions {
+  flex-wrap: wrap;
+}
+.secondary p {
+  max-height: none;
+}
+.secondary [aria-pressed="true"] {
+  background: #e7def2;
 }
 header {
   display: flex;
@@ -133,22 +194,12 @@ form button {
 }
 .error {
   color: #9b243c;
-  max-height: 40px;
   font-size: 10px;
 }
 
 .stage.managing {
   width: 360px;
   height: 640px;
-}
-.managing .bubble {
-  width: 344px;
-  max-height: 470px;
-  overflow: auto;
-}
-.bubble {
-  max-height: 236px;
-  overflow: auto;
 }
 .actions {
   display: flex;
@@ -223,17 +274,100 @@ legend {
   width: 128px;
   height: 128px;
 }
-.api-settings form { display: block; }
-.api-settings form button { width: auto; margin: 4px; padding: 7px; }
-.api-settings input[type=checkbox] { width: auto; }
-.api-settings p { max-height: none; }
-button:disabled { opacity: .5; cursor: default; }
-.bubble [role=status] { white-space: pre-wrap; }
-.api-settings input[type=radio] { width: auto; }
-.bubble::after { pointer-events: none; }
+.api-settings form {
+  display: block;
+}
+.api-settings form button {
+  width: auto;
+  margin: 4px;
+  padding: 7px;
+}
+.api-settings input[type="checkbox"] {
+  width: auto;
+}
+.api-settings p {
+  max-height: none;
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.bubble [role="status"] {
+  white-space: pre-wrap;
+}
+.api-settings input[type="radio"] {
+  width: auto;
+}
+.bubble::after {
+  pointer-events: none;
+}
 /* Tool output and previews are rendered only as text. */
-.bubble pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow: auto; font-size: 11px; }
-.bubble [role="dialog"] { border: 2px solid #7867bd; padding: 8px; }
-.bubble [aria-label="Data and recovery"] { border-top: 1px solid #d6c9e5; margin-top: 8px; }
-.bubble [aria-label="Data and recovery"] button { margin: 3px 0; font-size: 11px; }
-.bubble [role="alertdialog"] { border: 2px solid #9b243c; padding: 8px; }
+.secondary pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 180px;
+  overflow: auto;
+  font-size: 11px;
+}
+.secondary [role="dialog"] {
+  border: 2px solid #7867bd;
+  padding: 8px;
+}
+.secondary [aria-label="Data and recovery"] {
+  border-top: 1px solid #d6c9e5;
+  margin-top: 8px;
+}
+.secondary [aria-label="Data and recovery"] button {
+  margin: 3px 0;
+  font-size: 11px;
+}
+.secondary [role="alertdialog"] {
+  border: 2px solid #9b243c;
+  padding: 8px;
+}
+
+.secondary pre {
+  user-select: text;
+}
+.bubble .error button {
+  margin: 4px 4px 0 0;
+  font-size: 11px;
+}
+
+.pet-wheel {
+  position: absolute;
+  left: 0;
+  bottom: 104px;
+  width: 200px;
+  height: 96px;
+  z-index: 2;
+  pointer-events: none;
+}
+.pet-wheel button {
+  position: absolute;
+  width: 56px;
+  height: 40px;
+  border: 0;
+  border-radius: 50%;
+  background: #fffdf8;
+  box-shadow: 0 2px 8px #29243d28;
+  color: #59436f;
+  font-size: 10px;
+  line-height: 1.2;
+  pointer-events: auto;
+}
+.pet-wheel button:hover {
+  background: #e7def2;
+}
+.wheel-chat {
+  left: 72px;
+  top: 6px;
+}
+.wheel-appearance {
+  left: 2px;
+  top: 44px;
+}
+.wheel-settings {
+  left: 142px;
+  top: 44px;
+}

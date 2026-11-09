@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { TOOL_NAMES, type Grants, type ToolName } from "./modules/tools";
-export default function ToolPermissions() {
+export default function ToolPermissions({
+  expanded = false,
+  disabled = false,
+}: {
+  expanded?: boolean;
+  disabled?: boolean;
+}) {
   const [grants, setGrants] = useState<Grants>({ tools: [], folders: {} });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -19,14 +25,14 @@ export default function ToolPermissions() {
       setGrants(await invoke("tool_grants"));
     } catch {
       setError(
-        "Folder selection cancelled, denied, or storage unavailable / 已取消、路徑拒絕或儲存失敗",
+        "Resolve pending writes first; folder selection may be cancelled/denied or storage unavailable. / 請先處理待核准寫入；可能已取消、路徑拒絕或儲存失敗。",
       );
     } finally {
       setBusy(false);
     }
   }
   return (
-    <details>
+    <details open={expanded || undefined}>
       <summary>Tool permissions / 工具權限</summary>
       <p>
         Denied by default. Selected file contents may be sent to your consented
@@ -39,13 +45,13 @@ export default function ToolPermissions() {
             <input
               type="checkbox"
               checked={grants.tools.includes(tool)}
-              disabled={busy || !isTauri()}
+              disabled={disabled || busy || !isTauri()}
               onChange={(e) => void change(tool, e.target.checked, false)}
             />
             {tool}
           </label>
           <button
-            disabled={busy || !isTauri()}
+            disabled={disabled || busy || !isTauri()}
             onClick={() => void change(tool, true, true)}
           >
             Choose allowed folder / 選擇允許資料夾
@@ -54,7 +60,7 @@ export default function ToolPermissions() {
             <p key={folder}>
               {folder}
               <button
-                disabled={busy}
+                disabled={disabled || busy}
                 onClick={() => {
                   setBusy(true);
                   setError("");
@@ -73,7 +79,7 @@ export default function ToolPermissions() {
           ))}
           {grants.tools.includes(tool) && (
             <button
-              disabled={busy}
+              disabled={disabled || busy}
               onClick={() => void change(tool, false, false)}
             >
               Revoke tool and folders / 撤銷工具與資料夾

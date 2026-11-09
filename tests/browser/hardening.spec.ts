@@ -38,6 +38,8 @@ test("offline startup, settings and local actions remain available with denied p
   await expect(page.getByRole("alert")).toContainText(
     "Offline: chat requires a network provider",
   );
+  await page.getByLabel("Open controls / 開啟管理面板").click();
+  await page.getByRole("button", { name: "Tools & state / 工具與狀態", exact: true }).click();
   await page
     .getByText("Local tools (offline) / 本機工具（離線）", { exact: true })
     .click();
@@ -46,7 +48,9 @@ test("offline startup, settings and local actions remain available with denied p
     "Unavailable or denied",
   );
   await page.getByText("Settings / 設定", { exact: true }).click();
+  await page.getByRole("button", { name: "Appearance / 外觀", exact: true }).click();
   await expect(page.getByLabel("Current appearance")).toBeVisible();
+  await page.getByRole("button", { name: "Settings / 設定", exact: true }).click();
   await page.getByLabel("Open chat on startup").check();
   await page.getByLabel("System prompt").fill("Offline persona");
   await page.getByText("Save preferences / 儲存偏好", { exact: true }).click();

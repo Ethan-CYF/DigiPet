@@ -78,7 +78,12 @@ test("mock native tools display exact write preview, require confirmation, and S
   });
   await page.goto("/");
   await page.getByLabel("DigiPet: click to chat, drag to move").press("Enter");
+  await page.getByLabel("Open controls / 開啟管理面板").click();
+  await page
+    .getByRole("button", { name: "Tools & state / 工具與狀態", exact: true })
+    .click();
   await page.getByLabel("AI tools / AI 工具", { exact: true }).check();
+  await page.getByRole("button", { name: "Chat / 聊天", exact: true }).click();
   await page.getByLabel("Message", { exact: true }).fill("Export daily report");
   await page.getByLabel("Send message").click();
   const dialog = page.getByRole("dialog", { name: "Confirm tool write" });
@@ -90,13 +95,30 @@ test("mock native tools display exact write preview, require confirmation, and S
     "Awaiting write confirmation",
   );
   await dialog.getByText("Confirm write / 確認寫入", { exact: true }).click();
+  await page.getByRole("button", { name: "Chat / 聊天", exact: true }).click();
   await expect(page.getByRole("status")).toHaveText("Report saved");
   expect(await page.evaluate(() => (window as any).m4Writes)).toBe(1);
   await page.getByLabel("Message", { exact: true }).fill("Export again");
   await page.getByLabel("Send message").click();
   await expect(dialog).toBeVisible();
+  await page
+    .getByRole("button", { name: "Confirm write / 確認寫入", exact: true })
+    .press("Escape");
+  await expect(dialog).toBeHidden();
+  await page.getByLabel("Open controls / 開啟管理面板").click();
+  await expect(dialog).toBeVisible();
+  await dialog
+    .getByRole("button", { name: "Reject / 拒絕", exact: true })
+    .click();
+  await page.getByRole("button", { name: "Chat / 聊天", exact: true }).click();
+  await expect(page.getByLabel("Send message")).toBeEnabled();
+  expect(await page.evaluate(() => (window as any).m4Writes)).toBe(1);
+  await page.getByLabel("Message", { exact: true }).fill("Export then stop");
+  await page.getByLabel("Send message").click();
+  await expect(dialog).toBeVisible();
   await page.getByText("Stop / 停止", { exact: true }).click();
   await expect(dialog).not.toBeVisible();
+  await page.getByRole("button", { name: "Chat / 聊天", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("Stopped");
   expect(await page.evaluate(() => (window as any).m4Writes)).toBe(1);
 });

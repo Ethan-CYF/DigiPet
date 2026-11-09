@@ -96,6 +96,10 @@ test("offline UI uses real Rust calendar, journal and search; restart retains da
     });
     await page.goto("/");
     await context.setOffline(true);
+    await page.getByLabel("Open controls / 開啟管理面板").click();
+    await page
+      .getByRole("button", { name: "Tools & state / 工具與狀態", exact: true })
+      .click();
     await page
       .getByText("Local tools (offline) / 本機工具（離線）", { exact: true })
       .click();
@@ -113,6 +117,28 @@ test("offline UI uses real Rust calendar, journal and search; restart retains da
         page.getByRole("dialog", { name: "Confirm local write" }),
       ).toBeVisible();
       await page
+        .getByRole("dialog", { name: "Confirm local write" })
+        .getByRole("button", { name: "Reject / 拒絕", exact: true })
+        .press("Escape");
+      await page.getByLabel("Open controls / 開啟管理面板").click();
+      await page
+        .getByRole("button", {
+          name: "Tools & state / 工具與狀態",
+          exact: true,
+        })
+        .click();
+      await expect(
+        page.getByRole("dialog", { name: "Confirm local write" }),
+      ).toBeVisible();
+      await page
+        .getByRole("dialog", { name: "Confirm local write" })
+        .getByRole("button", { name: "Reject / 拒絕", exact: true })
+        .click();
+      await expect(page.getByLabel("Local tool result")).toContainText(
+        "rejected",
+      );
+      await page.getByText("Run locally / 本機執行", { exact: true }).click();
+      await page
         .getByText("Confirm local write / 確認本機寫入", { exact: true })
         .click();
       await expect(page.getByLabel("Local tool result")).toContainText("saved");
@@ -122,6 +148,10 @@ test("offline UI uses real Rust calendar, journal and search; restart retains da
     await context.setOffline(false);
     await page.reload();
     await context.setOffline(true);
+    await page.getByLabel("Open controls / 開啟管理面板").click();
+    await page
+      .getByRole("button", { name: "Tools & state / 工具與狀態", exact: true })
+      .click();
     await page
       .getByText("Local tools (offline) / 本機工具（離線）", { exact: true })
       .click();

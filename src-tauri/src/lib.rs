@@ -90,7 +90,7 @@ fn set_hit_regions(
     rectangles: Vec<Rect>,
     state: tauri::State<'_, Mutex<Interaction>>,
 ) -> Result<(), String> {
-    if rectangles.len() > 8193
+    if rectangles.len() > 8195
         || rectangles.iter().any(|r| {
             ![r.x, r.y, r.width, r.height].iter().all(|v| v.is_finite())
                 || r.width < 0.0
@@ -133,31 +133,38 @@ fn resize_pet(window: WebviewWindow, expanded: bool, managing: bool) -> Result<(
     let scale = window.scale_factor().map_err(|e| e.to_string())?;
     let old_size = window.inner_size().map_err(|e| e.to_string())?;
     let old_position = window.outer_position().map_err(|e| e.to_string())?;
-    let logical_height = if expanded && managing {
-        640.0
-    } else if expanded {
-        400.0
-    } else {
-        200.0
-    };
-    let new_height = (logical_height * scale).round() as u32;
-    window
-        .set_size(PhysicalSize::new(
-            ((if expanded && managing { 360.0 } else { 200.0 }) * scale).round() as u32,
-            new_height,
-        ))
-        .map_err(|e| e.to_string())?;
+    let new_size = pet_window_size(expanded, managing, scale);
+    let new_height = new_size.height;
+    window.set_size(new_size).map_err(|e| e.to_string())?;
     window
         .set_position(PhysicalPosition::new(
             old_position.x,
-            old_position
-                .y
-                .saturating_add(old_size.height as i32)
-                .saturating_sub(new_height as i32),
+            anchored_resize_y(old_position.y, old_size.height, new_height),
         ))
         .map_err(|e| e.to_string())?;
     recover_position(&window)?;
     Ok(())
+}
+
+fn anchored_resize_y(old_y: i32, old_height: u32, new_height: u32) -> i32 {
+    old_y
+        .saturating_add(old_height as i32)
+        .saturating_sub(new_height as i32)
+}
+
+// CSS stage sizes; the pet stays at left=36 and bottom=16 in every surface.
+fn pet_window_size(expanded: bool, managing: bool, scale: f64) -> PhysicalSize<u32> {
+    let (width, height) = if expanded && managing {
+        (360.0, 640.0)
+    } else if expanded {
+        (320.0, 456.0)
+    } else {
+        (200.0, 200.0)
+    };
+    PhysicalSize::new(
+        (width * scale).round() as u32,
+        (height * scale).round() as u32,
+    )
 }
 
 // Only this fixed application-owned file is accessed. Pack data never reaches Rust.
@@ -318,6 +325,7 @@ pub fn run() {
             api::api_reply,
             api::stop_api_reply,
             api::api_tool_turn,
+            tools::tool_access_setup,
             tools::tool_registry,
             tools::tool_repair, tools::tool_grants, tools::tool_grant, tools::tool_revoke_folder,
             tools::tool_run, tools::tool_confirm, tools::tool_cancel, tools::tool_reminders
@@ -530,6 +538,32 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn surface_sizes_keep_the_pet_anchor_and_recover_at_screen_edges_across_dpi() {
+        for scale in [1.0, 1.25, 1.5, 2.0] {
+            let idle = pet_window_size(false, false, scale);
+            assert_eq!(idle.width, (200.0 * scale).round() as u32);
+            let bottom = (900.0 * scale).round() as i32;
+            let pet_y = bottom - (80.0 * scale).round() as i32;
+            for (expanded, managing, logical_width, logical_height) in [
+                (true, false, 320.0, 456.0),
+                (true, true, 360.0, 640.0),
+                (false, true, 200.0, 200.0),
+            ] {
+                let size = pet_window_size(expanded, managing, scale);
+                assert_eq!(size.width, (logical_width * scale).round() as u32);
+                assert_eq!(size.height, (logical_height * scale).round() as u32);
+                let y = anchored_resize_y(bottom - idle.height as i32, idle.height, size.height);
+                assert_eq!(
+                    y + size.height as i32 - (80.0 * scale).round() as i32,
+                    pet_y
+                );
+                let screen_width = (1920.0 * scale).round() as u32;
+                let recovered_x = clamp_axis(screen_width as i32, 0, screen_width, size.width);
+                assert_eq!(recovered_x + size.width as i32, screen_width as i32);
+            }
+        }
+    }
     #[test]
     fn position_parser_rejects_corrupt_settings_and_preserves_negative_origins() {
         assert_eq!(parse_position("-1800 900"), Some((-1800, 900)));
