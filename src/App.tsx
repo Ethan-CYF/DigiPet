@@ -706,15 +706,17 @@ export default function App() {
                 <pre>{preview.before || "(new / 新增)"}</pre>
                 <h3>After / 新內容</h3>
                 <pre>{preview.after}</pre>
-                <button
-                  aria-label="Confirm write / 確認寫入"
-                  onClick={() => approval.current?.(true)}
-                >
-                  Confirm write / 確認寫入
-                </button>
-                <button onClick={() => approval.current?.(false)}>
-                  Reject / 拒絕
-                </button>
+                <div className="actions">
+                  <button
+                    aria-label="Confirm write / 確認寫入"
+                    onClick={() => approval.current?.(true)}
+                  >
+                    Confirm write / 確認寫入
+                  </button>
+                  <button onClick={() => approval.current?.(false)}>
+                    Reject / 拒絕
+                  </button>
+                </div>
               </section>
             )}
             {secondaryOpen && busy && <p role="status">{reply}</p>}
@@ -828,49 +830,51 @@ export default function App() {
                     </option>
                   ))}
                 </select>
-                <button
-                  disabled={busy}
-                  onClick={() => selectConversation(null)}
-                >
-                  New / 新增
-                </button>
-                <button
-                  disabled={busy || !current}
-                  onClick={() => {
-                    if (current)
+                <div className="actions">
+                  <button
+                    disabled={busy}
+                    onClick={() => selectConversation(null)}
+                  >
+                    New / 新增
+                  </button>
+                  <button
+                    disabled={busy || !current}
+                    onClick={() => {
+                      if (current)
+                        void history
+                          .remove(current.id)
+                          .then(async () => {
+                            selectConversation(null);
+                            setConversations(await history.list());
+                          })
+                          .catch(() =>
+                            setHistoryError(
+                              "Could not delete history / 無法刪除歷史",
+                            ),
+                          );
+                    }}
+                  >
+                    Delete / 刪除
+                  </button>
+                  <button
+                    disabled={busy}
+                    onClick={() => {
                       void history
-                        .remove(current.id)
-                        .then(async () => {
+                        .clear()
+                        .then(() => {
                           selectConversation(null);
-                          setConversations(await history.list());
+                          setConversations([]);
                         })
                         .catch(() =>
                           setHistoryError(
-                            "Could not delete history / 無法刪除歷史",
+                            "Could not clear history / 無法清空歷史",
                           ),
                         );
-                  }}
-                >
-                  Delete / 刪除
-                </button>
-                <button
-                  disabled={busy}
-                  onClick={() => {
-                    void history
-                      .clear()
-                      .then(() => {
-                        selectConversation(null);
-                        setConversations([]);
-                      })
-                      .catch(() =>
-                        setHistoryError(
-                          "Could not clear history / 無法清空歷史",
-                        ),
-                      );
-                  }}
-                >
-                  Clear all / 全部清除
-                </button>
+                    }}
+                  >
+                    Clear all / 全部清除
+                  </button>
+                </div>
                 {current && (
                   <details>
                     <summary>Messages / 訊息</summary>

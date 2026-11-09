@@ -140,10 +140,20 @@ test("desktop settings have clear categories, a single content scroller and scre
     expect(await panel.evaluate((e) => e.scrollWidth <= e.clientWidth)).toBe(
       true,
     );
+    if (label === "Conversations / 對話") {
+      const first = (await panel
+        .getByRole("button", { name: "New / 新增", exact: true })
+        .boundingBox())!;
+      const second = (await panel
+        .getByRole("button", { name: "Delete / 刪除", exact: true })
+        .boundingBox())!;
+      expect(second.x - first.x - first.width).toBeGreaterThanOrEqual(8);
+    }
   }
   for (const [label, name] of [
     ["Providers / 供應商", "providers"],
     ["Appearance / 外觀", "appearance"],
+    ["Conversations / 對話", "conversations"],
     ["Local tool access / 本機工具授權", "local-access"],
   ]) {
     await nav.getByRole("button", { name: label, exact: true }).click();

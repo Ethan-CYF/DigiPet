@@ -110,15 +110,24 @@ export default function LocalTools({
       </button>
       {preview && (
         <section role="dialog" aria-label="Confirm local write">
-          <pre>{preview.diff}</pre>
-          <pre>{preview.before}</pre>
+          {preview.diff && (
+            <>
+              <h3>Patch / 差異</h3>
+              <pre>{preview.diff}</pre>
+            </>
+          )}
+          <h3>Before / 原內容</h3>
+          <pre>{preview.before || "(new / 新增)"}</pre>
+          <h3>After / 新內容</h3>
           <pre>{preview.after}</pre>
-          <button disabled={busy} onClick={() => void run(true)}>
-            Confirm local write / 確認本機寫入
-          </button>
-          <button disabled={busy} onClick={() => void run(false)}>
-            Reject / 拒絕
-          </button>
+          <div className="actions">
+            <button disabled={busy} onClick={() => void run(true)}>
+              Confirm local write / 確認本機寫入
+            </button>
+            <button disabled={busy} onClick={() => void run(false)}>
+              Reject / 拒絕
+            </button>
+          </div>
         </section>
       )}
       {failed && openAccess && (
