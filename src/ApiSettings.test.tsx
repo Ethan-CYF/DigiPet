@@ -59,7 +59,9 @@ it("opens on fresh install, skips, restores on restart and reopens from settings
   render(<App />);
   expect(screen.queryByLabelText("API setup")).toBeNull();
   fireEvent.keyDown(screen.getByLabelText(/DigiPet: click/), { key: "Enter" });
-  fireEvent.click(screen.getByText("Settings / 設定"));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Open controls / 開啟管理面板" }),
+  );
   expect(screen.getByLabelText("API setup")).toBeTruthy();
 });
 it("saves only after opt-in, sends through native transport, stops and ignores late results", async () => {
@@ -228,6 +230,10 @@ it("streams progressively, keeps stopped text in history, resumes after error an
   view.unmount();
   render(<App />);
   fireEvent.keyDown(screen.getByLabelText(/DigiPet: click/), { key: "Enter" });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Open controls / 開啟管理面板" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Conversations / 對話" }));
   const saved = (await history.list())[0];
   await waitFor(() =>
     expect(
@@ -237,7 +243,12 @@ it("streams progressively, keeps stopped text in history, resumes after error an
   fireEvent.change(screen.getByLabelText("Conversation"), {
     target: { value: saved.id },
   });
+  fireEvent.click(screen.getByRole("button", { name: "Chat / 聊天" }));
   expect(screen.getByRole("status").textContent).toBe("recovered");
+  fireEvent.click(
+    screen.getByRole("button", { name: "Open controls / 開啟管理面板" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Conversations / 對話" }));
   fireEvent.click(screen.getByText("Delete / 刪除"));
   await waitFor(async () => expect(await history.list()).toEqual([]));
 });
@@ -260,7 +271,9 @@ it("persists revoked per-provider consent and explicit fallback and persona sett
   );
   render(<App />);
   fireEvent.keyDown(screen.getByLabelText(/DigiPet: click/), { key: "Enter" });
-  fireEvent.click(screen.getByText("Settings / 設定"));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Open controls / 開啟管理面板" }),
+  );
   expect(
     (screen.getByLabelText("Enable fallback") as HTMLInputElement).checked,
   ).toBe(false);
@@ -296,7 +309,9 @@ it("can revoke consent with a locked keychain when persona is unchanged", async 
   native.invoke.mockRejectedValue(new Error("keychain locked"));
   render(<App />);
   fireEvent.keyDown(screen.getByLabelText(/DigiPet: click/), { key: "Enter" });
-  fireEvent.click(screen.getByText("Settings / 設定"));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Open controls / 開啟管理面板" }),
+  );
   fireEvent.click(
     screen.getByLabelText("Consent https://example.test/v1 chat"),
   );

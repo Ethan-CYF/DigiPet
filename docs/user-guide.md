@@ -12,7 +12,23 @@ beta 準備工作，並不表示已公開發行。請先閱讀[安裝、SHA-256 
 確認可信來源及校驗碼後，由使用者決定是否安裝，受管理裝置可能禁止執行。
 Windows 需要 WebView2；Linux 需 WebKitGTK 4.1、GTK 3 及相關系統依賴。
 
-啟動後，寵物上方開啟設定精靈。之後點寵物 → **Settings / 設定** 可重新開啟。
+Calendar／Journal 只使用 DigiPet 自己的本機 JSON，不存取 OS 日曆或帳戶；首次安裝及
+升級會預設啟用，不顯示 Local tool access 原生授權對話框，也沒有重新要求授權流程。
+Settings → **Local tool access / 本機工具授權** 保留逐工具開關；首次遷移後，使用者
+關閉 Calendar／Journal 的選擇會在重啟及資料修復後保留。既有資料與已選擇的資料夾授權保留。
+Report／Coding／File Search 預設拒絕，需逐工具使用 **Choose allowed folder** 或開啟
+開關時的系統資料夾選擇器指定允許資料夾；取消不會啟用。每次資料寫入仍須完整預覽及確認。
+首次 API 設定精靈仍在管理面板顯示，可略過。
+滑過寵物會顯示 Chat／Appearance／Settings 輪盤；離開、Escape 或點外面收起，拖曳時隱藏。
+之後滑過寵物按齒輪、右鍵點寵物，或聚焦後按
+`Ctrl+,` → **Settings / 設定** 可重新開啟。平常關閉時只有透明背景的寵物；點寵物
+只開關輕量聊天泡泡，Escape 關閉並把焦點還給寵物，開啟聊天時聚焦輸入欄。
+管理面板的 **Conversations / 對話** 管理歷史；**Tools & state / 工具與狀態** 提供
+本機工具、AI 工具開關及動畫狀態除錯。兩個介面不會同時疊在寵物上方。
+設定使用分類側欄：Providers（API／偏好）、Local tool access、Tools & state、Appearance、
+Conversations、Data & recovery、Updates。面板按內容所需增高，並以螢幕可用範圍為上限；
+到上限才在內容區捲動，頂部的聊天及關閉按鈕保持可見。小螢幕改用可橫向捲動的分類列。
+上傳外觀或展開更多內容時，視窗同步調整尺寸；聊天泡泡保持原有輕量大小。
 可儲存「啟動時開啟聊天」和「還原上次對話」偏好。托盤 Quit 才退出程式，隱藏不等於退出。
 `Ctrl+Shift+P` 顯示／隱藏，`Ctrl+Shift+I` 開關透明區域穿透；Wayland 不提供這兩個全域快捷鍵。
 拖曳移動寵物；Windows／X11 會盡力還原位置，多螢幕／縮放仍需人工驗證。
@@ -46,11 +62,13 @@ Windows 需要 WebView2；Linux 需 WebKitGTK 4.1、GTK 3 及相關系統依賴�
 
 ### 工具與權限
 
-在 Settings 展開 **Tool permissions / 工具權限**，逐工具啟用。檔案存取另外按
+在 Settings → **Local tool access / 本機工具授權** 展開 **Tool permissions / 工具權限**，逐工具開關。檔案存取另外按
 **Choose allowed folder / 選擇允許資料夾**，每工具分開授權；可撤銷資料夾或整個工具。
-聊天勾選 **AI tools / AI 工具** 後，供應商可提出工具操作。
+管理面板 → **Tools & state / 工具與狀態** 勾選 **AI tools / AI 工具** 後，供應商可提出工具操作。
 工具模式用非串流回合，仍受路由同意及 Stop 控制。所有工具資料寫入均先顯示完整
 **Before / After**；只有你按 **Confirm write / 確認寫入** 才執行。拒絕或停止不寫入。
+寫入預覽在管理面板自動顯示。Escape 只隱藏面板；重新按齒輪可繼續確認或拒絕，
+不會自動批准或丟棄待核准寫入。Stop 會安全拒絕待核准 AI 寫入。
 確認前再檢查權限、路徑及原內容；檔案改變需新預覽。模型不能授權或自行確認。
 
 | 工具 | 現有能力及限制 |
@@ -68,7 +86,8 @@ Windows 需要 WebView2；Linux 需 WebKitGTK 4.1、GTK 3 及相關系統依賴�
 
 ### Pet packs：現有外觀庫及匯入
 
-點 **Appearance / 外觀**（亦可在 Settings 管理），匯入後預覽並儲存套用；可切換、
+所有外觀選擇、PNG 上傳、類型、還原、刪除及上傳提示只在次要介面，不會出現在聊天泡泡。
+點 **Appearance / 外觀**（亦可從輪盤開啟），匯入後預覽並儲存套用；可切換、
 刪除本機副本及還原預設，來源檔案不受影響。最多 8 個外觀，使用 WebView localStorage 保存。
 
 - 單圖：選 PNG，以原圖像素輸入 x、y、width、height 裁切；最長邊縮至 256。
@@ -96,7 +115,7 @@ API 對話存於 WebView IndexedDB `digipet.chat.v1`；可選 Conversation 繼�
 Delete 刪除選取對話、Clear all 清空。每個對話保存最近 500 則及最多 2 MiB JSON。
 停止／失敗可保存部分回覆及狀態，重啟後保留；這些內容可能進入後續 context。
 
-在 Settings → **History & recovery**：
+在 Settings → **Data & recovery / 資料與復原** → **History & recovery**：
 
 - **Export history**：下載 `digipet-history.json`，只含對話欄位，不含設定、路由、素材、
   工具資料、授權或備份。會遮蔽已設定金鑰及常見秘密格式；金鑰庫不可讀時拒絕匯出。
@@ -114,7 +133,7 @@ Delete 刪除選取對話、Clear all 清空。每個對話保存最近 500 則�
 
 ### 手動檢查更新
 
-在 Settings 按 **Check for updates / 檢查更新**，才向固定 GitHub API 查詢較新的正式版本。
+在 Settings → **Updates / 更新** 按 **Check for updates / 檢查更新**，才向固定 GitHub API 查詢較新的正式版本。
 查詢只帶版本 User-Agent 和一般 HTTP metadata，沒有金鑰、聊天或裝置 ID；不跟隨重新導向。
 較新版本會提供版本頁連結，由你手動下載、核對 SHA-256 再安裝。沒有 timer、背景啟動查詢或
 自動下載／安裝。離線、沒有正式版本、被限流或回應無效時不顯示通知。
@@ -146,8 +165,29 @@ warnings are expected. Verify the source and checksum before deciding to install
 managed devices may prohibit unsigned software. Windows needs WebView2; Linux needs
 WebKitGTK 4.1, GTK 3 and host dependencies.
 
-First launch opens the API wizard above the pet. Click the pet → **Settings** to
-reopen it. Save Open chat on startup and Restore last conversation preferences as
+Calendar and Journal use DigiPet-owned local JSON, not OS calendars/accounts. They
+are enabled by default on fresh installs and upgrades without a native access dialog
+or re-prompt flow. Settings → **Local tool access** keeps per-tool on/off toggles.
+After the one-time migration, turning either tool off persists across restart and repair.
+Existing records and previously chosen folder grants are preserved. Report, Coding and
+File Search remain denied until you choose an allowed folder in the system folder picker,
+including when switching a file tool on; cancelling does not enable it. Every data write
+still requires the full preview and confirmation. The first-run API wizard remains in
+the controls panel and can be skipped.
+Hovering the pet shows a compact Chat / Appearance / Settings wheel. Leaving, Escape,
+or clicking outside dismisses it; dragging hides it.
+ Hover the pet for the gear,
+right-click the pet, or press `Ctrl+,` while focused → **Settings** to reopen it.
+Normal closed mode shows only the pet on a transparent background. Clicking the pet
+opens a lightweight speech bubble and focuses its input; Escape closes it and restores
+pet focus. The controls panel holds **Conversations** and **Tools & state** (local tools,
+AI tools and animation debugging). Chat and controls appear one at a time.
+Settings uses one category sidebar: Providers (API and preference cards), Local tool
+access, Tools & state, Appearance, Conversations, Data & recovery, and Updates. The panel
+grows with its content until reaching the monitor work-area limit, then scrolls in the
+body while Chat and Close stay visible. Smaller screens use a horizontally scrollable
+category bar. Importing an appearance or expanding content resizes the native window;
+the lightweight chat bubble keeps its existing size. Save Open chat on startup and Restore last conversation preferences as
 needed. Tray Quit exits; hiding does not. `Ctrl+Shift+P` shows/hides and
 `Ctrl+Shift+I` toggles transparent-area click-through. These global shortcuts are
 disabled on Wayland. Drag to move; Windows/X11 attempt position restoration.
@@ -185,9 +225,9 @@ content; redaction cannot reliably detect arbitrary unknown secrets.
 
 ### Tools and permissions
 
-Settings → **Tool permissions** enables tools individually. File access also needs
+Settings → **Local tool access** → **Tool permissions** turns individual tools on/off; Calendar/Journal default on. File access also needs
 **Choose allowed folder** for each tool. Revoke folders or entire tools there.
-Check **AI tools** in chat to let the consented provider propose operations.
+Check **AI tools** in the controls panel → **Tools & state** to let the consented provider propose operations.
 Tool turns are nonstreaming and still honor route consent and Stop. Every tool
 data write displays **Before / After** and waits for your **Confirm write**.
 Rejecting/stopping writes nothing. Confirmation rechecks grants, paths and original
@@ -209,7 +249,9 @@ about 1 MiB and excludes content, paths and keys.
 
 ### Pet packs: existing appearance library/import
 
-Open **Appearance** (also available in Settings), import, preview and save/apply.
+All appearance controls (selection, PNG upload, type, restore, delete and prompt tips)
+and all settings stay in the secondary surface, never in the chat bubble.
+Open **Appearance** (also available from the wheel), import, preview and save/apply.
 Select, delete local copies or restore defaults without modifying source files.
 At most eight appearances persist in WebView localStorage.
 
@@ -235,7 +277,11 @@ to continue, New to create, Delete for the selected conversation or Clear all.
 Each conversation retains at most 500 recent messages and 2 MiB JSON. Partial
 stopped/error responses and status persist across restart and can enter later context.
 
-Settings → **History & recovery**:
+Write previews open in the controls panel. Escape hides the panel while preserving
+pending approval; reopen with the gear to confirm or reject. Stop safely rejects a
+pending AI write. Closing the panel never approves a write.
+
+Settings → **Data & recovery** → **History & recovery**:
 
 - **Export history** downloads `digipet-history.json` with allowlisted conversation
   fields only, excluding settings, routes, assets, tool data, grants and backups.
@@ -256,7 +302,7 @@ backups and exports are unencrypted; the OS keychain protects API credentials on
 
 ### Manual update checks
 
-Settings → **Check for updates** explicitly requests newer stable metadata from
+Settings → **Updates** → **Check for updates** explicitly requests newer stable metadata from
 fixed GitHub endpoints. Requests include a version User-Agent and ordinary HTTP
 metadata, without keys, chat or device IDs; redirects are disabled. Open the offered
 release page, download, verify SHA-256 and install manually. No startup/background

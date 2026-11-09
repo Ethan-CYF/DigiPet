@@ -19,8 +19,8 @@ const native = vi.hoisted(() => ({
 }));
 vi.mock("@tauri-apps/api/core", () => ({
   isTauri: () => native.enabled,
-  invoke: (command: string) => {
-    native.invoke(command);
+  invoke: (command: string, args: unknown) => {
+    native.invoke(command, args);
     return Promise.resolve(
       command === "begin_pet_gesture" ? native.monitored : undefined,
     );
@@ -37,7 +37,10 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 beforeEach(() => {
   localStorage.clear();
-  localStorage.setItem("digipet.api.v1", JSON.stringify({ completed: true, cloudConsent: false }));
+  localStorage.setItem(
+    "digipet.api.v1",
+    JSON.stringify({ completed: true, cloudConsent: false }),
+  );
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
   native.enabled = false;
   native.monitored = true;
@@ -99,8 +102,9 @@ describe("pet interaction", () => {
     native.enabled = true;
     render(<App />);
     fireEvent.mouseDown(pet(), { button: 0, screenX: 100, screenY: 100 });
-    await waitFor(() => expect(native.drag).toHaveBeenCalledTimes(1));
+    // Release before the IPC promise resolves: React must still defer to native.
     fireEvent.mouseUp(pet(), { button: 0, screenX: 100, screenY: 100 });
+    await waitFor(() => expect(native.drag).toHaveBeenCalledTimes(1));
     expect(screen.queryByRole("textbox")).toBeNull();
     act(() => native.listeners.get("pet-click")?.({ payload: null }));
     expect(screen.getByRole("textbox")).toBeTruthy();
@@ -125,6 +129,12 @@ describe("M1 controls", () => {
     try {
       const view = render(<App />);
       clickPet();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Open controls / 開啟管理面板" }),
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Tools & state / 工具與狀態" }),
+      );
       const selector = screen.getByLabelText("Animation state");
       expect(
         [...selector.querySelectorAll("option")].map((o) => o.value),
@@ -153,6 +163,7 @@ describe("M1 controls", () => {
             ?.getAttribute("data-state"),
         ).toBe(state);
       }
+      fireEvent.click(screen.getByRole("button", { name: "Chat / 聊天" }));
       fireEvent.change(screen.getByLabelText("Message"), {
         target: { value: "hello" },
       });
@@ -170,7 +181,10 @@ describe("M1 controls", () => {
   it("opens local appearance controls, restores default and closes with Escape", () => {
     render(<App />);
     clickPet();
-    fireEvent.click(screen.getByText("Appearance / 外觀"));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open controls / 開啟管理面板" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Appearance / 外觀" }));
     expect(screen.getByLabelText("Import PNG")).toBeTruthy();
     expect(
       screen.getByLabelText("Current appearance").querySelectorAll("option"),

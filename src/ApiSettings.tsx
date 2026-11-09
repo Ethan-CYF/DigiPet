@@ -1,4 +1,3 @@
-import ToolPermissions from "./ToolPermissions";
 import { useState, type FormEvent } from "react";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import {
@@ -83,43 +82,8 @@ export default function ApiSettings({
   }
   return (
     <section className="api-settings" aria-label="API setup">
-      <ToolPermissions />
-      <label>
-        <input
-          type="checkbox"
-          aria-label="Open chat on startup"
-          checked={draft.openOnStartup ?? false}
-          onChange={(e) =>
-            setDraft({ ...draft, openOnStartup: e.target.checked })
-          }
-        />
-        Open chat on startup / 啟動時開啟聊天
-      </label>
-      <label>
-        <input
-          type="checkbox"
-          aria-label="Restore last conversation"
-          checked={draft.rememberConversation !== false}
-          onChange={(e) =>
-            setDraft({ ...draft, rememberConversation: e.target.checked })
-          }
-        />
-        Restore last conversation / 還原上次對話
-      </label>
-      <label>
-        Persona / 角色提示
-        <textarea
-          aria-label="System prompt"
-          maxLength={4000}
-          value={draft.systemPrompt ?? ""}
-          onChange={(e) => setDraft({ ...draft, systemPrompt: e.target.value })}
-        />
-      </label>
-      <button disabled={busy} onClick={() => void saveRouter()}>
-        Save preferences / 儲存偏好
-      </button>
       {providerRoutes(draft).length > 0 && !adding && (
-        <section aria-label="Provider router">
+        <section className="settings-card" aria-label="Provider router">
           <h2>Providers / 供應商</h2>
           <p>
             Only opted-in providers receive recent messages and persona.
@@ -127,7 +91,7 @@ export default function ApiSettings({
             僅同意的供應商會收到近期訊息及角色提示；預設不自動切換。
           </p>
           {providerRoutes(draft).map((p) => (
-            <div key={p.route.credentialRef}>
+            <div className="provider-entry" key={p.route.credentialRef}>
               <label>
                 <input
                   type="radio"
@@ -207,64 +171,68 @@ export default function ApiSettings({
             Enable fallback to other consented providers /
             允許切換至其他已同意的供應商
           </label>
-          <label>
-            Context: last N messages / 近期訊息數
-            <input
-              type="number"
-              aria-label="Context window"
-              min="1"
-              max="100"
-              value={draft.contextWindow ?? 20}
-              onChange={(e) =>
-                setDraft({ ...draft, contextWindow: Number(e.target.value) })
-              }
-            />
-          </label>
-          <label>
-            Timeout (ms) / 逾時
-            <input
-              type="number"
-              aria-label="Provider timeout"
-              min="1000"
-              max="120000"
-              value={draft.timeoutMs ?? 60000}
-              onChange={(e) =>
-                setDraft({ ...draft, timeoutMs: Number(e.target.value) })
-              }
-            />
-          </label>
-          <label>
-            Retries / 重試
-            <select
-              aria-label="Provider retries"
-              value={draft.retries ?? 0}
-              onChange={(e) =>
-                setDraft({ ...draft, retries: Number(e.target.value) })
-              }
+          <div className="settings-grid">
+            <label>
+              Context: last N messages / 近期訊息數
+              <input
+                type="number"
+                aria-label="Context window"
+                min="1"
+                max="100"
+                value={draft.contextWindow ?? 20}
+                onChange={(e) =>
+                  setDraft({ ...draft, contextWindow: Number(e.target.value) })
+                }
+              />
+            </label>
+            <label>
+              Timeout (ms) / 逾時
+              <input
+                type="number"
+                aria-label="Provider timeout"
+                min="1000"
+                max="120000"
+                value={draft.timeoutMs ?? 60000}
+                onChange={(e) =>
+                  setDraft({ ...draft, timeoutMs: Number(e.target.value) })
+                }
+              />
+            </label>
+            <label>
+              Retries / 重試
+              <select
+                aria-label="Provider retries"
+                value={draft.retries ?? 0}
+                onChange={(e) =>
+                  setDraft({ ...draft, retries: Number(e.target.value) })
+                }
+              >
+                {[0, 1, 2].map((n) => (
+                  <option key={n}>{n}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="actions">
+            <button disabled={busy} onClick={() => void saveRouter()}>
+              Save router / 儲存路由
+            </button>
+            <button
+              disabled={providerRoutes(draft).length >= 8}
+              onClick={() => {
+                setAdding(true);
+                setBaseUrl("");
+                setModel("");
+                setConsent(false);
+              }}
             >
-              {[0, 1, 2].map((n) => (
-                <option key={n}>{n}</option>
-              ))}
-            </select>
-          </label>
-          <button disabled={busy} onClick={() => void saveRouter()}>
-            Save router / 儲存路由
-          </button>
-          <button
-            disabled={providerRoutes(draft).length >= 8}
-            onClick={() => {
-              setAdding(true);
-              setBaseUrl("");
-              setModel("");
-              setConsent(false);
-            }}
-          >
-            Add provider / 新增供應商
-          </button>
+              Add provider / 新增供應商
+            </button>
+          </div>
         </section>
       )}
       {(providerRoutes(draft).length === 0 || adding) && (
-        <>
+        <section className="settings-card" aria-label="Provider configuration">
           <h2>API setup / API 設定精靈</h2>
           <p>
             API-only · OpenAI-compatible (e.g. DeepSeek). No model downloads. /
@@ -331,22 +299,24 @@ export default function ApiSettings({
               I agree to cloud requests to this endpoint /
               我同意向此端點傳送雲端請求
             </label>
-            <button disabled={busy || !consent} type="submit">
-              Save / 儲存
-            </button>
-            <button
-              disabled={busy}
-              type="button"
-              onClick={() => {
-                if (adding) {
-                  setAdding(false);
-                  setApiKey("");
-                  setConsent(false);
-                } else void finish(true);
-              }}
-            >
-              {adding ? "Cancel / 取消" : "Skip for now / 暫時略過"}
-            </button>
+            <div className="actions">
+              <button disabled={busy || !consent} type="submit">
+                Save / 儲存
+              </button>
+              <button
+                disabled={busy}
+                type="button"
+                onClick={() => {
+                  if (adding) {
+                    setAdding(false);
+                    setApiKey("");
+                    setConsent(false);
+                  } else void finish(true);
+                }}
+              >
+                {adding ? "Cancel / 取消" : "Skip for now / 暫時略過"}
+              </button>
+            </div>
           </form>
           <p>
             Keys stay in the OS keychain. Re-enter a key to replace settings.
@@ -354,13 +324,52 @@ export default function ApiSettings({
             金鑰存於系統金鑰庫；修改時請重新輸入。略過會停用 API
             並嘗試刪除已存金鑰。
           </p>
-        </>
+        </section>
       )}
       {providerRoutes(draft).length > 0 && !adding && (
         <button onClick={() => void finish(true)}>
           Disable API / 停用 API
         </button>
       )}
+      <section className="settings-card" aria-label="Preferences / 偏好">
+        <h2>Preferences / 偏好</h2>
+        <label>
+          <input
+            type="checkbox"
+            aria-label="Open chat on startup"
+            checked={draft.openOnStartup ?? false}
+            onChange={(e) =>
+              setDraft({ ...draft, openOnStartup: e.target.checked })
+            }
+          />
+          Open chat on startup / 啟動時開啟聊天
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            aria-label="Restore last conversation"
+            checked={draft.rememberConversation !== false}
+            onChange={(e) =>
+              setDraft({ ...draft, rememberConversation: e.target.checked })
+            }
+          />
+          Restore last conversation / 還原上次對話
+        </label>
+        <label>
+          Persona / 角色提示
+          <textarea
+            aria-label="System prompt"
+            maxLength={4000}
+            value={draft.systemPrompt ?? ""}
+            onChange={(e) =>
+              setDraft({ ...draft, systemPrompt: e.target.value })
+            }
+          />
+        </label>
+        <button disabled={busy} onClick={() => void saveRouter()}>
+          Save preferences / 儲存偏好
+        </button>
+      </section>
       {error && (
         <p role="alert" className="error">
           {error}

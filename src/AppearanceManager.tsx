@@ -111,7 +111,7 @@ export default function AppearanceManager({
     }
   }
   return (
-    <div className="appearance-manager" aria-label="Appearance Manager">
+    <div className="appearance-manager settings-card" aria-label="Appearance Manager">
       <h2>外觀 / Appearance</h2>
       <p>本機限定 / Local only · 最多 8 個 / Up to 8</p>
       <label>

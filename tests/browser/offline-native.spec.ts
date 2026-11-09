@@ -53,10 +53,23 @@ test("offline UI uses real Rust calendar, journal and search; restart retains da
   }
   try {
     start();
-    for (const tool of ["calendar", "journal", "file_search"])
-      await request({ op: "grant", tool });
+    expect((await request({ op: "grants" })).tools).toEqual([
+      "calendar",
+      "journal",
+    ]);
+    await request({ op: "grant", tool: "file_search" });
     await page.exposeFunction("m5Native", async (cmd: string, args: any) => {
       if (cmd === "tool_grants") return request({ op: "grants" });
+      if (
+        cmd === "tool_grant" &&
+        ["calendar", "journal"].includes(args.tool) &&
+        !args.pickFolder
+      )
+        return request({
+          op: "toggle_local",
+          tool: args.tool,
+          enabled: args.enabled,
+        });
       if (cmd === "tool_run")
         return request({ op: "run", tool: args.tool, args: args.arguments });
       if (cmd === "tool_confirm")
@@ -96,8 +109,62 @@ test("offline UI uses real Rust calendar, journal and search; restart retains da
     });
     await page.goto("/");
     await context.setOffline(true);
+    await page.getByLabel("Open controls / 開啟管理面板").click();
+    await page
+      .getByRole("button", { name: "Tools & state / 工具與狀態", exact: true })
+      .click();
     await page
       .getByText("Local tools (offline) / 本機工具（離線）", { exact: true })
+      .click();
+    await page
+      .getByLabel("Local tool", { exact: true })
+      .selectOption("calendar");
+    await page.getByText("Run locally / 本機執行", { exact: true }).click();
+    await expect(page.getByLabel("Local tool result")).toHaveText("[]");
+    await page
+      .getByRole("button", { name: "Providers / 供應商", exact: true })
+      .click();
+    await page
+      .getByRole("button", {
+        name: "Local tool access / 本機工具授權",
+        exact: true,
+      })
+      .click();
+    await expect(
+      page.getByRole("button", { name: /Request local access again/ }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("checkbox", { name: "calendar", exact: true }),
+    ).toBeChecked();
+    await expect(
+      page.getByRole("checkbox", { name: "journal", exact: true }),
+    ).toBeChecked();
+    await page.getByRole("checkbox", { name: "calendar", exact: true }).click();
+    await expect(
+      page.getByRole("checkbox", { name: "calendar", exact: true }),
+    ).not.toBeChecked();
+    await stop();
+    start();
+    expect((await request({ op: "grants" })).tools).not.toContain("calendar");
+    await page
+      .getByRole("button", { name: "Tools & state / 工具與狀態", exact: true })
+      .click();
+    await page.getByText("Run locally / 本機執行", { exact: true }).click();
+    await expect(page.getByLabel("Local tool result")).toContainText(
+      "Unavailable or denied",
+    );
+    await page
+      .getByRole("button", {
+        name: "Grant or repair access / 授權或修復存取",
+        exact: true,
+      })
+      .click();
+    await page.getByRole("checkbox", { name: "calendar", exact: true }).click();
+    await expect(
+      page.getByRole("checkbox", { name: "calendar", exact: true }),
+    ).toBeChecked();
+    await page
+      .getByRole("button", { name: "Tools & state / 工具與狀態", exact: true })
       .click();
     for (const [tool, date] of [
       ["calendar", "20261109T090000Z"],
@@ -113,6 +180,36 @@ test("offline UI uses real Rust calendar, journal and search; restart retains da
         page.getByRole("dialog", { name: "Confirm local write" }),
       ).toBeVisible();
       await page
+        .getByRole("button", { name: "Chat / 聊天", exact: true })
+        .click();
+      await expect(page.getByLabel("Send message")).toBeDisabled();
+      await page.getByLabel("Open controls / 開啟管理面板").click();
+      await expect(
+        page.getByRole("dialog", { name: "Confirm local write" }),
+      ).toBeVisible();
+      await page
+        .getByRole("dialog", { name: "Confirm local write" })
+        .getByRole("button", { name: "Reject / 拒絕", exact: true })
+        .press("Escape");
+      await page.getByLabel("Open controls / 開啟管理面板").click();
+      await page
+        .getByRole("button", {
+          name: "Tools & state / 工具與狀態",
+          exact: true,
+        })
+        .click();
+      await expect(
+        page.getByRole("dialog", { name: "Confirm local write" }),
+      ).toBeVisible();
+      await page
+        .getByRole("dialog", { name: "Confirm local write" })
+        .getByRole("button", { name: "Reject / 拒絕", exact: true })
+        .click();
+      await expect(page.getByLabel("Local tool result")).toContainText(
+        "rejected",
+      );
+      await page.getByText("Run locally / 本機執行", { exact: true }).click();
+      await page
         .getByText("Confirm local write / 確認本機寫入", { exact: true })
         .click();
       await expect(page.getByLabel("Local tool result")).toContainText("saved");
@@ -122,6 +219,10 @@ test("offline UI uses real Rust calendar, journal and search; restart retains da
     await context.setOffline(false);
     await page.reload();
     await context.setOffline(true);
+    await page.getByLabel("Open controls / 開啟管理面板").click();
+    await page
+      .getByRole("button", { name: "Tools & state / 工具與狀態", exact: true })
+      .click();
     await page
       .getByText("Local tools (offline) / 本機工具（離線）", { exact: true })
       .click();

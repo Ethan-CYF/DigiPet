@@ -72,10 +72,14 @@ test("fresh API setup to first chat and restored history with a local mock provi
     await page.reload();
     await expect(page.getByLabel("API setup", { exact: true })).toHaveCount(0);
     await page.getByLabel("DigiPet: click to chat, drag to move").press("Enter");
+    await page.getByLabel("Open controls / 開啟管理面板").click();
+    await page.getByRole("button", { name: "Conversations / 對話", exact: true }).click();
     await page.getByLabel("Conversation").selectOption({ label: "hello beta" });
+    await page.getByRole("button", { name: "Chat / 聊天", exact: true }).click();
     await expect(page.getByRole("status")).toHaveText("Hello beta tester");
     expect(calls).toHaveLength(1);
-    await page.getByText("Settings / 設定", { exact: true }).click();
+    await page.getByLabel("Open controls / 開啟管理面板").click();
+    await page.getByRole("button", { name: "Providers / 供應商", exact: true }).click();
     await expect(page.getByLabel("API key", { exact: true })).toHaveCount(0);
   } finally {
     vault.clear();

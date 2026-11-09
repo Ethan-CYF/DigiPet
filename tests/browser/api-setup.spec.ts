@@ -22,7 +22,7 @@ test("fresh wizard has explicit consent, fails closed without native keychain, t
   await page.reload();
   await expect(page.getByLabel("API setup", { exact: true })).toHaveCount(0);
   await page.getByLabel("DigiPet: click to chat, drag to move").press("Enter");
-  await page.getByText("Settings / 設定", { exact: true }).click();
+  await page.getByLabel("Open controls / 開啟管理面板").click();
   await expect(page.getByLabel("API setup", { exact: true })).toBeVisible();
   await expect(page.getByLabel("API key", { exact: true })).toHaveValue("");
 });

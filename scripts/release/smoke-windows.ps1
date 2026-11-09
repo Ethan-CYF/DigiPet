@@ -35,6 +35,65 @@ try {
   # A real top-level HWND is stronger evidence than a sleeping process alone.
   if ($app.MainWindowHandle -eq 0) { throw 'No application window found' }
   'PASS: unsigned per-user silent install and native window launch' | Add-Content $evidence
+  if (!(Test-Path (Join-Path $installDir 'uninstall.exe'))) { throw 'Successful install is missing uninstall.exe' }
+  # Inspect native windows directly; first launch must have no tool-access dialog.
+  Add-Type -TypeDefinition @'
+using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
+using System.Text;
+public static class DigiPetNativeSmoke {
+  public sealed class WindowInfo { public IntPtr Handle; public string Title; }
+  private delegate bool EnumProc(IntPtr handle, IntPtr parameter);
+  [DllImport("user32.dll")] private static extern bool EnumWindows(EnumProc callback, IntPtr parameter);
+  [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr handle, out uint processId);
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr handle, StringBuilder title, int size);
+  private static string Title(IntPtr handle) { var text = new StringBuilder(1024); GetWindowText(handle, text, text.Capacity); return text.ToString(); }
+  public static WindowInfo[] ForProcess(int processId) {
+    var result = new List<WindowInfo>();
+    EnumWindows((handle, parameter) => {
+      uint owner; GetWindowThreadProcessId(handle, out owner);
+      if (owner == processId) result.Add(new WindowInfo { Handle = handle, Title = Title(handle) });
+      return true;
+    }, IntPtr.Zero);
+    return result.ToArray();
+  }
+
+}
+'@
+  function Assert-LocalDefaults {
+    foreach ($window in [DigiPetNativeSmoke]::ForProcess($app.Id)) {
+      if ($window.Title -like '*DigiPet M6*') { throw 'Stale M6 window title' }
+      if ($window.Title -like '*Local tool access*') { throw 'Unexpected native tool-access dialog' }
+    }
+    $grantsFile = Join-Path $dataDirs[1] 'tools/tools-v1.json'
+    if (!(Test-Path $grantsFile)) { throw 'Local tool defaults were not initialized' }
+    $toolsData = Get-Content -Raw $grantsFile | ConvertFrom-Json
+    if (!$toolsData.local_defaults_applied) { throw 'Default migration was not persisted' }
+    if ('calendar' -notin $toolsData.grants.tools -or 'journal' -notin $toolsData.grants.tools) { throw 'Calendar/Journal should default on without a prompt' }
+    foreach ($tool in @('report', 'coding', 'file_search')) {
+      if ($tool -in $toolsData.grants.tools) { throw 'File tool enabled without choosing a folder' }
+    }
+    return $toolsData
+  }
+  $fresh = Assert-LocalDefaults
+  'PASS: fresh launch has no access dialog; Calendar/Journal default on and file tools stay denied' | Add-Content $evidence
+  # Model an existing installation, including a previous Not now marker; migration
+  # must not depend on that removed prompt or lose existing local records.
+  Stop-Process -Id $app.Id -Force
+  $app.WaitForExit()
+  $legacy = @{ grants = @{ tools = @(); folders = @{} }; calendar = @(@{ id = 'ci-kept'; title = 'CI upgrade record'; text = 'keep'; date = '20261109T090000Z' }); journal = @() }
+  $grantsFile = Join-Path $dataDirs[1] 'tools/tools-v1.json'
+  $legacy | ConvertTo-Json -Depth 8 | Set-Content -Encoding utf8 $grantsFile
+  Set-Content (Join-Path $dataDirs[0] 'local-tool-access-v1.txt') 'deferred'
+  $app = Start-Process -FilePath $exe -PassThru
+  Start-Sleep -Seconds 8
+  $app.Refresh()
+  if ($app.HasExited) { throw 'Upgrade launch exited early' }
+  $upgraded = Assert-LocalDefaults
+  if ($upgraded.calendar[0].title -ne 'CI upgrade record') { throw 'Upgrade lost a local record' }
+  'PASS: upgrade enables local defaults without prompting and preserves existing records' | Add-Content $evidence
+
 } catch {
   "FAIL: $($_.Exception.Message)" | Add-Content $evidence
   throw

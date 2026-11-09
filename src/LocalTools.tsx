@@ -1,8 +1,16 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { backend, type Preview, type ToolArgs } from "./modules/tools";
 /** Existing local features through the exact same backend grants and write previews. No provider involved. */
-export default function LocalTools() {
+export default function LocalTools({
+  pendingChanged,
+  openAccess,
+  disabled = false,
+}: {
+  pendingChanged?: (pending: boolean) => void;
+  openAccess?: () => void;
+  disabled?: boolean;
+}) {
   const [tool, setTool] = useState<"calendar" | "journal" | "file_search">(
     "calendar",
   );
@@ -11,8 +19,13 @@ export default function LocalTools() {
   const [result, setResult] = useState("");
   const [preview, setPreview] = useState<Preview>();
   const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    pendingChanged?.(busy || !!preview);
+  }, [preview, busy, pendingChanged]);
   async function run(approved?: boolean) {
     setBusy(true);
+    setFailed(false);
     try {
       const value =
         approved !== undefined && preview
@@ -28,6 +41,7 @@ export default function LocalTools() {
         JSON.stringify(value.untrusted_data ?? value.status ?? "", null, 2),
       );
     } catch {
+      setFailed(true);
       setResult(
         "Unavailable or denied. Check grants or repair local tools in Settings. / 不可用或權限拒絕，請檢查授權或在設定修復工具。",
       );
@@ -36,7 +50,7 @@ export default function LocalTools() {
     }
   }
   return (
-    <details>
+    <details className="settings-card">
       <summary>Local tools (offline) / 本機工具（離線）</summary>
       <select
         aria-label="Local tool"
@@ -89,23 +103,37 @@ export default function LocalTools() {
         </label>
       ))}
       <button
-        disabled={busy || !!preview || !isTauri()}
+        disabled={disabled || busy || !!preview || !isTauri()}
         onClick={() => void run()}
       >
         Run locally / 本機執行
       </button>
       {preview && (
         <section role="dialog" aria-label="Confirm local write">
-          <pre>{preview.diff}</pre>
-          <pre>{preview.before}</pre>
+          {preview.diff && (
+            <>
+              <h3>Patch / 差異</h3>
+              <pre>{preview.diff}</pre>
+            </>
+          )}
+          <h3>Before / 原內容</h3>
+          <pre>{preview.before || "(new / 新增)"}</pre>
+          <h3>After / 新內容</h3>
           <pre>{preview.after}</pre>
-          <button disabled={busy} onClick={() => void run(true)}>
-            Confirm local write / 確認本機寫入
-          </button>
-          <button disabled={busy} onClick={() => void run(false)}>
-            Reject / 拒絕
-          </button>
+          <div className="actions">
+            <button disabled={busy} onClick={() => void run(true)}>
+              Confirm local write / 確認本機寫入
+            </button>
+            <button disabled={busy} onClick={() => void run(false)}>
+              Reject / 拒絕
+            </button>
+          </div>
         </section>
+      )}
+      {failed && openAccess && (
+        <button onClick={openAccess}>
+          Grant or repair access / 授權或修復存取
+        </button>
       )}
       <pre aria-label="Local tool result">{result}</pre>
     </details>
