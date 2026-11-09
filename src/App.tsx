@@ -498,6 +498,9 @@ export default function App() {
                 invalid={invalid}
                 animation={animation}
               />
+              {desktop && <button disabled={updateNotice.checking} onClick={() => void updateNotice.check()}>
+                Check for updates / 檢查更新
+              </button>}
               <DataSettings
                 settings={settings}
                 changed={() => {
