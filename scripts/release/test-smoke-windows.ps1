@@ -59,6 +59,10 @@ try {
   }
   "PASS: production smoke rejected missing uninstall.exe with exit $status (P2)" | Add-Content 'work/smoke-windows-negative.txt'
   Get-Content 'work/smoke-windows-negative.txt'
+} catch {
+  $diagnostic = ($_ | Out-String).Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+  Write-Output "::error title=Windows negative regression harness::$diagnostic"
+  throw
 } finally {
   Remove-Item -LiteralPath $root -Recurse -Force
 }
