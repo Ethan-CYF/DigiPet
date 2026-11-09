@@ -79,7 +79,7 @@ test("fresh API setup to first chat and restored history with a local mock provi
     await expect(page.getByRole("status")).toHaveText("Hello beta tester");
     expect(calls).toHaveLength(1);
     await page.getByLabel("Open controls / 開啟管理面板").click();
-    await page.getByText("Settings / 設定", { exact: true }).click();
+    await page.getByRole("button", { name: "Providers / 供應商", exact: true }).click();
     await expect(page.getByLabel("API key", { exact: true })).toHaveCount(0);
   } finally {
     vault.clear();

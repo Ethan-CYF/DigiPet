@@ -47,10 +47,10 @@ test("offline startup, settings and local actions remain available with denied p
   await expect(page.getByLabel("Local tool result")).toContainText(
     "Unavailable or denied",
   );
-  await page.getByText("Settings / 設定", { exact: true }).click();
+  await page.getByRole("button", { name: "Providers / 供應商", exact: true }).click();
   await page.getByRole("button", { name: "Appearance / 外觀", exact: true }).click();
   await expect(page.getByLabel("Current appearance")).toBeVisible();
-  await page.getByRole("button", { name: "Settings / 設定", exact: true }).click();
+  await page.getByRole("button", { name: "Providers / 供應商", exact: true }).click();
   await page.getByLabel("Open chat on startup").check();
   await page.getByLabel("System prompt").fill("Offline persona");
   await page.getByText("Save preferences / 儲存偏好", { exact: true }).click();

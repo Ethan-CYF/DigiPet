@@ -31,7 +31,8 @@ artifacts，不建立 tag 或 GitHub Release。尚未完成的人工測試不代
    滑過寵物顯示 Chat／Appearance／Settings 輪盤，移開、Escape 或點外面會收起。
    亦可按齒輪、右鍵／聚焦後按 `Ctrl+,` 開啟獨立管理面板。
    **Settings / 設定** 管理 API、同意、偏好、資料及工具權限；外觀、對話和工具各有入口。所有外觀控制（選擇、PNG 上傳、類型、還原、刪除、上傳提示）
-   及設定均只在次要介面，聊天泡泡不包含這些控制。
+   及設定均只在次要介面，聊天泡泡不包含這些控制。設定面板以分類導覽及較大字級顯示，
+   隨內容增高，到螢幕可用範圍才捲動；較小螢幕使用橫向分類導覽。
    不要在聊天或問題回報貼出金鑰。
 
 完整步驟、疑難排解及資料界線見[雙語使用者指南](docs/user-guide.md)。
@@ -139,7 +140,9 @@ Outstanding manual checks must not be read as passed.
    **Settings** manages APIs, consent, preferences, data and tool permissions;
    Appearance, Conversations and Tools & state have their own controls. All appearance
    controls (selection, PNG upload, type, restore, delete and prompt tips) and all settings
-   remain in this secondary surface, never inside the chat bubble.
+   remain in this secondary surface, never inside the chat bubble. The roomy settings
+   panel grows with content and scrolls at the monitor work-area limit; smaller screens
+   use a horizontal category bar. Providers and preferences use separate cards.
    Never paste credentials into chat or issue reports.
 
 See the [bilingual User Guide](docs/user-guide.md) for steps, data boundaries and troubleshooting.

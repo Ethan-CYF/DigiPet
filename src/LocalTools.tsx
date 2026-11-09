@@ -50,7 +50,7 @@ export default function LocalTools({
     }
   }
   return (
-    <details>
+    <details className="settings-card">
       <summary>Local tools (offline) / 本機工具（離線）</summary>
       <select
         aria-label="Local tool"

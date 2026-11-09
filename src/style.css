@@ -121,28 +121,6 @@ a:focus-visible {
 [hidden] {
   display: none !important;
 }
-.secondary {
-  position: absolute;
-  left: 8px;
-  bottom: 216px;
-  width: 344px;
-  max-height: 414px;
-  padding: 12px;
-  overflow: auto;
-  overscroll-behavior: contain;
-  background: #fffdf8;
-  border-radius: 14px;
-  box-shadow: 0 3px 12px #29243d20;
-}
-.secondary .actions {
-  flex-wrap: wrap;
-}
-.secondary p {
-  max-height: none;
-}
-.secondary [aria-pressed="true"] {
-  background: #e7def2;
-}
 header {
   display: flex;
   justify-content: space-between;
@@ -198,8 +176,8 @@ form button {
 }
 
 .stage.managing {
-  width: 360px;
-  height: 640px;
+  width: var(--surface-window-width);
+  height: var(--surface-window-height);
 }
 .actions {
   display: flex;
@@ -370,4 +348,359 @@ button:disabled {
 .wheel-settings {
   left: 142px;
   top: 44px;
+}
+
+/* Secondary surfaces use content height and monitor limits, independently of chat. */
+.secondary {
+  position: absolute;
+  left: 8px;
+  bottom: 216px;
+  width: var(--surface-width);
+  max-height: var(--surface-max-height);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  container-type: inline-size;
+  background: #f8f7fb;
+  border: 1px solid #ded8e8;
+  border-radius: 18px;
+  box-shadow: 0 8px 28px #29243d24;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.secondary-header {
+  flex: none;
+  padding: 20px 24px;
+  gap: 20px;
+  background: #fffdf8;
+  border-bottom: 1px solid #e4deeb;
+}
+.secondary-header > div:first-child {
+  min-width: 0;
+}
+.secondary-header .app-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #857392;
+}
+.secondary-header h1 {
+  margin: 4px 0 0;
+  font-size: 22px;
+  line-height: 1.35;
+}
+.secondary-header .actions {
+  margin: 0;
+  flex-wrap: nowrap;
+}
+.secondary-body {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.secondary-nav {
+  align-self: start;
+  position: sticky;
+  top: 0;
+  display: grid;
+  gap: 8px;
+  padding: 20px 12px;
+}
+.secondary-nav button {
+  text-align: left;
+}
+.secondary-nav [aria-current="page"] {
+  color: #61417f;
+  background: #eae2f4;
+  border-color: #c6b4dc;
+  font-weight: 600;
+}
+.secondary-content {
+  min-width: 0;
+  padding: 24px;
+  border-left: 1px solid #e4deeb;
+}
+.secondary-content > :first-child {
+  margin-top: 0;
+}
+.secondary h2 {
+  margin: 0 0 16px;
+  font-size: 18px;
+  line-height: 1.4;
+}
+.secondary h3 {
+  font-size: 15px;
+  margin: 20px 0 10px;
+}
+.secondary p {
+  font-size: 14px;
+  line-height: 1.7;
+  max-height: none;
+  overflow: visible;
+  margin: 0 0 18px;
+}
+.secondary button {
+  width: auto;
+  min-height: 40px;
+  max-width: 100%;
+  padding: 9px 14px;
+  border: 1px solid #d7ccdf;
+  border-radius: 9px;
+  background: #fff;
+  color: #443650;
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.secondary button:hover:not(:disabled) {
+  border-color: #a68aba;
+  background: #f0eaf7;
+}
+.secondary .actions {
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 12px 0 20px;
+}
+.secondary-header .actions {
+  flex-wrap: nowrap;
+  margin: 0;
+}
+.secondary label {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 18px;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.secondary input,
+.secondary select,
+.secondary textarea {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 10px 12px;
+  font: inherit;
+  background: #fff;
+  border: 1px solid #cfc3dc;
+  border-radius: 8px;
+}
+.secondary input[type="file"] {
+  padding: 12px;
+  border-style: dashed;
+  background: #fcfaff;
+}
+.secondary textarea {
+  min-height: 160px;
+  height: auto;
+  resize: vertical;
+}
+.secondary label:has(> input[type="checkbox"]),
+.secondary label:has(> input[type="radio"]) {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.secondary input[type="checkbox"],
+.secondary input[type="radio"] {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  padding: 0;
+  margin: 3px 0 0;
+  accent-color: #725494;
+}
+.secondary form {
+  display: grid;
+  gap: 18px;
+}
+.secondary form label {
+  margin: 0;
+}
+.secondary form button {
+  width: auto;
+  padding: 10px 14px;
+  margin: 0;
+}
+.secondary button[type="submit"] {
+  background: #725494;
+  color: #fff;
+}
+.secondary .settings-card {
+  background: #fff;
+  border: 1px solid #e0d8e9;
+  border-radius: 12px;
+  padding: 24px;
+  margin: 0 0 24px;
+}
+.secondary .settings-card > :last-child {
+  margin-bottom: 0;
+}
+.secondary .api-settings {
+  display: grid;
+  gap: 24px;
+}
+.secondary .api-settings .settings-card {
+  margin-bottom: 0;
+}
+.secondary .provider-entry {
+  padding: 18px;
+  margin-bottom: 20px;
+  border: 1px solid #e4dced;
+  border-radius: 10px;
+  background: #faf8fd;
+}
+.secondary fieldset {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 20px 0;
+  padding: 18px;
+  border-radius: 10px;
+}
+.secondary fieldset label {
+  margin: 0;
+}
+.secondary legend {
+  font-size: 14px;
+  padding: 0 6px;
+}
+.secondary summary {
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-bottom: 18px;
+}
+.secondary .tool-permissions > div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding: 18px 0;
+  border-top: 1px solid #e4dced;
+}
+.secondary .tool-permissions > div > p {
+  grid-column: 1 / -1;
+}
+.secondary .tool-permissions label {
+  margin: 0;
+}
+.secondary .source-preview {
+  display: block;
+  max-height: 280px;
+  margin: 20px 0;
+}
+.secondary .preview {
+  font-size: 14px;
+  padding: 12px;
+  gap: 16px;
+  margin: 20px 0;
+}
+.secondary pre {
+  max-height: none;
+  overflow: visible;
+  margin: 12px 0 20px;
+  padding: 16px;
+  font-size: 13px;
+  line-height: 1.6;
+  background: #f6f2fa;
+  border-radius: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.secondary [role="dialog"],
+.secondary [role="alertdialog"] {
+  padding: 24px;
+  margin-bottom: 24px;
+  border-radius: 12px;
+}
+.secondary [aria-label="Data and recovery"] button {
+  margin: 0 8px 12px 0;
+  font-size: 14px;
+}
+.secondary .error {
+  font-size: 14px;
+  padding: 14px;
+  background: #fff0f2;
+  border-radius: 8px;
+}
+@container (max-width: 640px) {
+  .secondary-header {
+    padding: 16px;
+    gap: 12px;
+  }
+  .secondary-header h1 {
+    font-size: 18px;
+  }
+  .secondary-header .actions button {
+    padding: 8px;
+  }
+  .secondary-body {
+    display: block;
+    scroll-padding-top: 76px;
+  }
+  .secondary-nav {
+    position: sticky;
+    display: flex;
+    overflow-x: auto;
+    padding: 12px;
+    background: #f8f7fb;
+    z-index: 1;
+  }
+  .secondary-nav button {
+    flex: none;
+    max-width: none;
+    white-space: nowrap;
+    padding: 9px;
+  }
+  .secondary-content {
+    padding: 16px;
+    border-left: 0;
+    border-top: 1px solid #e4deeb;
+  }
+  .secondary .settings-card {
+    padding: 18px;
+  }
+  .secondary .tool-permissions > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.secondary .settings-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  align-items: end;
+  margin-bottom: 20px;
+}
+.secondary .settings-grid label {
+  margin: 0;
+}
+@container (max-width: 640px) {
+  .secondary .settings-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.secondary form .actions {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0;
+}
+.secondary .settings-card > select {
+  margin-bottom: 18px;
+}
+
+.secondary-nav {
+  max-height: calc(var(--surface-max-height) - var(--surface-header-height));
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+@container (max-width: 640px) {
+  .secondary-nav {
+    max-height: none;
+    overflow-y: hidden;
+  }
 }

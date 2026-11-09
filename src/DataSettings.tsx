@@ -29,7 +29,7 @@ export default function DataSettings({
     }
   }
   return (
-    <section aria-label="Data and recovery">
+    <section className="settings-card" aria-label="Data and recovery">
       <h2>History & recovery / 歷史與復原</h2>
       <button
         disabled={busy}

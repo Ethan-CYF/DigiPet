@@ -1,7 +1,7 @@
 mod api;
 mod tools;
 mod updates;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     sync::Mutex,
     time::{Duration, Instant},
@@ -128,18 +128,84 @@ fn cancel_pet_gesture(window: WebviewWindow, state: tauri::State<'_, Mutex<Inter
     let _ = window.emit("pet-moving", false);
 }
 
+#[derive(Clone, Copy, Debug, Deserialize)]
+struct SurfaceSize {
+    width: f64,
+    height: f64,
+}
+#[derive(Clone, Copy, Debug, Serialize)]
+struct SurfaceLimits {
+    width: f64,
+    height: f64,
+}
+
 #[tauri::command]
-fn resize_pet(window: WebviewWindow, expanded: bool, managing: bool) -> Result<(), String> {
+fn get_pet_surface_limits(window: WebviewWindow) -> Result<SurfaceLimits, String> {
+    surface_limits(&window)
+}
+fn surface_limits(window: &WebviewWindow) -> Result<SurfaceLimits, String> {
+    let scale = window.scale_factor().map_err(|e| e.to_string())?;
+    let monitor = window
+        .current_monitor()
+        .map_err(|e| e.to_string())?
+        .or(window.primary_monitor().map_err(|e| e.to_string())?);
+    let (width, height) = monitor
+        .map(|m| {
+            (
+                m.work_area().size.width as f64 / scale,
+                m.work_area().size.height as f64 / scale,
+            )
+        })
+        .unwrap_or((1280.0, 960.0));
+    Ok(SurfaceLimits {
+        width: (width - 32.0).floor().max(200.0),
+        height: (height - 240.0).floor().clamp(160.0, 960.0),
+    })
+}
+fn measured_surface_size(
+    surface: SurfaceSize,
+    limits: SurfaceLimits,
+    scale: f64,
+) -> Result<PhysicalSize<u32>, String> {
+    if !surface.width.is_finite()
+        || !surface.height.is_finite()
+        || surface.width < 200.0
+        || surface.height < 224.0
+    {
+        return Err("Invalid secondary surface dimensions".into());
+    }
+    Ok(PhysicalSize::new(
+        (surface.width.min(limits.width + 16.0) * scale).round() as u32,
+        (surface.height.min(limits.height + 224.0) * scale).round() as u32,
+    ))
+}
+#[tauri::command]
+fn resize_pet(
+    window: WebviewWindow,
+    expanded: bool,
+    managing: bool,
+    surface: Option<SurfaceSize>,
+) -> Result<(), String> {
     let scale = window.scale_factor().map_err(|e| e.to_string())?;
     let old_size = window.inner_size().map_err(|e| e.to_string())?;
     let old_position = window.outer_position().map_err(|e| e.to_string())?;
-    let new_size = pet_window_size(expanded, managing, scale);
-    let new_height = new_size.height;
+    let new_size = if expanded && managing {
+        measured_surface_size(
+            surface.unwrap_or(SurfaceSize {
+                width: 976.0,
+                height: 824.0,
+            }),
+            surface_limits(&window)?,
+            scale,
+        )?
+    } else {
+        pet_window_size(expanded, managing, scale)
+    };
     window.set_size(new_size).map_err(|e| e.to_string())?;
     window
         .set_position(PhysicalPosition::new(
             old_position.x,
-            anchored_resize_y(old_position.y, old_size.height, new_height),
+            anchored_resize_y(old_position.y, old_size.height, new_size.height),
         ))
         .map_err(|e| e.to_string())?;
     recover_position(&window)?;
@@ -155,7 +221,7 @@ fn anchored_resize_y(old_y: i32, old_height: u32, new_height: u32) -> i32 {
 // CSS stage sizes; the pet stays at left=36 and bottom=16 in every surface.
 fn pet_window_size(expanded: bool, managing: bool, scale: f64) -> PhysicalSize<u32> {
     let (width, height) = if expanded && managing {
-        (360.0, 640.0)
+        (976.0, 824.0)
     } else if expanded {
         (320.0, 456.0)
     } else {
@@ -218,8 +284,9 @@ fn recover_position(window: &WebviewWindow) -> Result<(), String> {
     }) else {
         return Ok(());
     };
-    let origin = monitor.position();
-    let bounds = monitor.size();
+    let work_area = monitor.work_area();
+    let origin = &work_area.position;
+    let bounds = &work_area.size;
     window
         .set_position(PhysicalPosition::new(
             clamp_axis(p.x, origin.x, bounds.width, size.width),
@@ -316,6 +383,7 @@ pub fn run() {
             begin_pet_gesture,
             cancel_pet_gesture,
             resize_pet,
+            get_pet_surface_limits,
             updates::check_for_update,
             updates::open_release_page,
             api::save_api_credential,
@@ -546,7 +614,7 @@ mod tests {
             let pet_y = bottom - (80.0 * scale).round() as i32;
             for (expanded, managing, logical_width, logical_height) in [
                 (true, false, 320.0, 456.0),
-                (true, true, 360.0, 640.0),
+                (true, true, 976.0, 824.0),
                 (false, true, 200.0, 200.0),
             ] {
                 let size = pet_window_size(expanded, managing, scale);
@@ -561,6 +629,52 @@ mod tests {
                 let recovered_x = clamp_axis(screen_width as i32, 0, screen_width, size.width);
                 assert_eq!(recovered_x + size.width as i32, screen_width as i32);
             }
+        }
+    }
+    #[test]
+    fn measured_surfaces_grow_with_content_and_clamp_to_monitor_limits_across_dpi() {
+        for scale in [1.0, 1.25, 1.5, 2.0] {
+            let limits = SurfaceLimits {
+                width: 960.0,
+                height: 640.0,
+            };
+            let short = measured_surface_size(
+                SurfaceSize {
+                    width: 776.0,
+                    height: 560.0,
+                },
+                limits,
+                scale,
+            )
+            .unwrap();
+            let tall = measured_surface_size(
+                SurfaceSize {
+                    width: 976.0,
+                    height: 1200.0,
+                },
+                limits,
+                scale,
+            )
+            .unwrap();
+            assert!(short.height < tall.height);
+            assert_eq!(tall.width, (976.0 * scale).round() as u32);
+            assert_eq!(tall.height, (864.0 * scale).round() as u32);
+            let y = anchored_resize_y(100, short.height, tall.height);
+            assert_eq!(y + tall.height as i32, 100 + short.height as i32);
+        }
+        for width in [f64::NAN, f64::INFINITY, -1.0, 0.0] {
+            assert!(measured_surface_size(
+                SurfaceSize {
+                    width,
+                    height: 600.0
+                },
+                SurfaceLimits {
+                    width: 960.0,
+                    height: 640.0
+                },
+                1.0
+            )
+            .is_err());
         }
     }
     #[test]

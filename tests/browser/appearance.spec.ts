@@ -225,7 +225,7 @@ test("a corrupt saved PNG restores the visible default and preserves original by
       ),
     )
     .toBe("broken");
-  await page.getByText("Settings / 設定", { exact: true }).click();
+  await page.getByRole("button", { name: "Providers / 供應商", exact: true }).click();
   await page.getByRole("button", { name: "Data & recovery / 資料與復原", exact: true }).click();
   await page
     .getByText("Backup & reset digipet.appearances.v1 / 備份並重設", {

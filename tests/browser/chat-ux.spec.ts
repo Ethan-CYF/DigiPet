@@ -312,10 +312,10 @@ test("all appearance controls and settings stay in the secondary surface", async
     true,
   );
   await panel
-    .getByRole("button", { name: "Settings / 設定", exact: true })
+    .getByRole("button", { name: "Providers / 供應商", exact: true })
     .click();
   for (const name of [
-    "API & preferences / API 與偏好",
+    "Providers / 供應商",
     "Local tool access / 本機工具授權",
     "Data & recovery / 資料與復原",
     "Updates / 更新",

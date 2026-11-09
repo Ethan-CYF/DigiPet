@@ -32,7 +32,7 @@ export default function ToolPermissions({
     }
   }
   return (
-    <details open={expanded || undefined}>
+    <details className="tool-permissions" open={expanded || undefined}>
       <summary>Tool permissions / 工具權限</summary>
       <p>
         Calendar and Journal default on. File tools require an allowed folder.

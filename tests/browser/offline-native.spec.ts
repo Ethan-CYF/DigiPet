@@ -122,7 +122,7 @@ test("offline UI uses real Rust calendar, journal and search; restart retains da
     await page.getByText("Run locally / 本機執行", { exact: true }).click();
     await expect(page.getByLabel("Local tool result")).toHaveText("[]");
     await page
-      .getByRole("button", { name: "Settings / 設定", exact: true })
+      .getByRole("button", { name: "Providers / 供應商", exact: true })
       .click();
     await page
       .getByRole("button", {

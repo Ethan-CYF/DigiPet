@@ -25,6 +25,10 @@ Report／Coding／File Search 預設拒絕，需逐工具使用 **Choose allowed
 只開關輕量聊天泡泡，Escape 關閉並把焦點還給寵物，開啟聊天時聚焦輸入欄。
 管理面板的 **Conversations / 對話** 管理歷史；**Tools & state / 工具與狀態** 提供
 本機工具、AI 工具開關及動畫狀態除錯。兩個介面不會同時疊在寵物上方。
+設定使用分類側欄：Providers（API／偏好）、Local tool access、Tools & state、Appearance、
+Conversations、Data & recovery、Updates。面板按內容所需增高，並以螢幕可用範圍為上限；
+到上限才在內容區捲動，頂部的聊天及關閉按鈕保持可見。小螢幕改用可橫向捲動的分類列。
+上傳外觀或展開更多內容時，視窗同步調整尺寸；聊天泡泡保持原有輕量大小。
 可儲存「啟動時開啟聊天」和「還原上次對話」偏好。托盤 Quit 才退出程式，隱藏不等於退出。
 `Ctrl+Shift+P` 顯示／隱藏，`Ctrl+Shift+I` 開關透明區域穿透；Wayland 不提供這兩個全域快捷鍵。
 拖曳移動寵物；Windows／X11 會盡力還原位置，多螢幕／縮放仍需人工驗證。
@@ -58,7 +62,7 @@ Report／Coding／File Search 預設拒絕，需逐工具使用 **Choose allowed
 
 ### 工具與權限
 
-在 Settings → **Local tool access / 本機工具授權** 展開 **Tool permissions / 工具權限**，逐工具啟用。檔案存取另外按
+在 Settings → **Local tool access / 本機工具授權** 展開 **Tool permissions / 工具權限**，逐工具開關。檔案存取另外按
 **Choose allowed folder / 選擇允許資料夾**，每工具分開授權；可撤銷資料夾或整個工具。
 管理面板 → **Tools & state / 工具與狀態** 勾選 **AI tools / AI 工具** 後，供應商可提出工具操作。
 工具模式用非串流回合，仍受路由同意及 Stop 控制。所有工具資料寫入均先顯示完整
@@ -178,8 +182,12 @@ Normal closed mode shows only the pet on a transparent background. Clicking the 
 opens a lightweight speech bubble and focuses its input; Escape closes it and restores
 pet focus. The controls panel holds **Conversations** and **Tools & state** (local tools,
 AI tools and animation debugging). Chat and controls appear one at a time.
-Settings shows one category at a time: API & preferences, Local tool access, Data & recovery,
-and Updates. Save Open chat on startup and Restore last conversation preferences as
+Settings uses one category sidebar: Providers (API and preference cards), Local tool
+access, Tools & state, Appearance, Conversations, Data & recovery, and Updates. The panel
+grows with its content until reaching the monitor work-area limit, then scrolls in the
+body while Chat and Close stay visible. Smaller screens use a horizontally scrollable
+category bar. Importing an appearance or expanding content resizes the native window;
+the lightweight chat bubble keeps its existing size. Save Open chat on startup and Restore last conversation preferences as
 needed. Tray Quit exits; hiding does not. `Ctrl+Shift+P` shows/hides and
 `Ctrl+Shift+I` toggles transparent-area click-through. These global shortcuts are
 disabled on Wayland. Drag to move; Windows/X11 attempt position restoration.
