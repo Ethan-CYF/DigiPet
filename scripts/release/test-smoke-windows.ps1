@@ -31,12 +31,27 @@ function Start-Process {
 . $Smoke
 '@ | Set-Content $child
 try {
-  $PSNativeCommandUseErrorActionPreference = $false
-  $output = & (Join-Path $PSHOME 'pwsh.exe') -NoProfile -File $child $smoke $root 2>&1
-  $status = $LASTEXITCODE
+  $start = [System.Diagnostics.ProcessStartInfo]::new()
+  $start.FileName = Join-Path $PSHOME 'pwsh.exe'
+  foreach ($argument in @('-NoProfile', '-File', $child, $smoke, $root)) { $start.ArgumentList.Add($argument) }
+  $start.UseShellExecute = $false
+  $start.RedirectStandardOutput = $true
+  $start.RedirectStandardError = $true
+  $process = [System.Diagnostics.Process]::Start($start)
+  $stdout = $process.StandardOutput.ReadToEndAsync()
+  $stderr = $process.StandardError.ReadToEndAsync()
+  $process.WaitForExit()
+  $status = $process.ExitCode
+  $output = $stdout.GetAwaiter().GetResult() + $stderr.GetAwaiter().GetResult()
+  $process.Dispose()
   $output | Set-Content 'work/smoke-windows-negative.txt'
+  # Make fixture failures diagnosable even without authenticated artifact/log access.
+  if ($status -eq 0 -or $output -notmatch 'Successful install is missing uninstall.exe') {
+    $diagnostic = $output.Replace('%', '%25').Replace("`r", '%0D').Replace("`n", '%0A')
+    Write-Output "::error title=Windows negative fixture (exit $status)::$diagnostic"
+  }
   if ($status -eq 0) { throw 'Regression: smoke succeeded without uninstall.exe' }
-  if (($output | Out-String) -notmatch 'Successful install is missing uninstall.exe') {
+  if ($output -notmatch 'Successful install is missing uninstall.exe') {
     throw 'Negative fixture failed for an unrelated reason; inspect evidence'
   }
   if ((Get-Content 'work/smoke-windows.txt' -Raw) -notmatch 'PASS: unsigned per-user silent install and native window launch') {
